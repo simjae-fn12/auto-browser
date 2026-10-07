@@ -1,0 +1,10 @@
+node_modules/
+dist/
+native/bin/
+native/obj/
+native/publish/
+native/publish-*/
+native/.test-profile*/
+native/.*-test-profile/
+native/*.user
+native/native-test.png
