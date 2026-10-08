@@ -9,7 +9,7 @@ dotnet run --project .\native.csproj
 dotnet publish .\native.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o .\publish
 ```
 
-빌드에는 .NET 10 SDK가 필요합니다. 실행 파일은 `publish\EgoWindowsNative.exe`입니다. Windows의 WebView2 런타임이 필요합니다. 모든 탭은 `%APPDATA%\ego-windows-native\profile`을 공유하므로 앱 안에서 로그인한 사이트를 에이전트 탭도 사용할 수 있습니다. 사람 탭과 에이전트 작업 공간의 탭 URL은 다시 시작할 때 복원됩니다.
+빌드에는 .NET 10 SDK가 필요합니다. 실행 파일은 `publish\EgoWindowsNative.exe`입니다. Windows의 WebView2 런타임이 필요합니다. 모든 탭은 `%APPDATA%\ego-windows-native\profile`을 공유하므로 앱 안에서 로그인한 사이트를 에이전트 탭도 사용할 수 있습니다. 다시 시작할 때는 사람 탭의 URL만 복원됩니다.
 
 ## 에이전트 CLI
 
@@ -48,8 +48,17 @@ try {
 
 `node .\agent.mjs .\my-task.mjs`처럼 파일로 전달할 수도 있습니다. 먼저 `browser.useOrCreateSpace('작업 이름')`으로 작업 공간을 가져옵니다. 반환된 `task`에는 `list`, `open`, `show`, `goto`, `snapshot`, `click`, `fill`, `press`, `scroll`, `wait`, `js`, `screenshot`, `close`가 있습니다. 같은 이름을 다시 사용하면 기존 탭을 이어서 사용할 수 있습니다. 다른 작업 공간의 탭 ID는 조작할 수 없습니다. Node.js는 이 자동화 스크립트 실행에만 사용하며 브라우저 앱 자체에는 필요하지 않습니다.
 
+### 자동 탭 정리
+
+- 기본적으로 스크립트가 성공하거나 오류로 끝나면 **해당 실행에서 새로 연 탭과 팝업**을 닫고 WebView2를 해제합니다. 같은 Space의 다른 실행이 연 탭과 사용자 탭은 건드리지 않습니다.
+- 여러 번의 CLI 실행에 걸쳐 이어서 작업해야 할 때만 `node .\agent.mjs --keep-tabs .\my-task.mjs`를 사용합니다. 표준 입력에도 `--keep-tabs`를 쓸 수 있습니다. 이 옵션도 오류 종료 시에는 새로 연 탭을 정리합니다. 마지막 단계에서는 남겨 둔 탭에 `task.close(id)`를 호출하세요.
+- 실행 중에는 30초마다 생존 신호를 보냅니다. 강제 종료나 기존 CLI 사용으로 남은 AI 탭은 **작업 공간 전체가 15분 동안 사용되지 않으면** 최대 1분 이내에 정리합니다. 명령 실행 중이거나 사용자가 현재 보고 있는 탭이 있는 공간은 제외합니다.
+- AI 탭은 Space당 20개, 전체 60개까지만 열 수 있습니다. 한도에 도달하면 기존 탭을 닫으라는 오류를 반환합니다. 팝업도 같은 한도를 적용합니다.
+- 앱 재시작 시 AI 탭은 복원하지 않습니다. 사용자 탭과 로그인 프로필은 유지됩니다.
+- 초기화 실패 상태의 탭도 `close`로 정리할 수 있습니다.
+
 작업 공간마다 탭과 페이지 입력 포커스·스크롤 상태가 따로 유지됩니다. 에이전트가 새 탭을 열어도 사용자가 보고 있는 탭은 바뀌지 않습니다. 모든 작업 공간은 현재 같은 WebView2 프로필을 사용하므로 로그인 쿠키와 사이트 저장소는 공유됩니다. 사이트 계정 자체까지 작업별로 분리하는 기능은 아직 없습니다.
-앱을 닫으면 사용자 탭과 작업 공간 이름·탭 URL을 저장하고 다음 실행 때 복원합니다. 페이지 안의 입력 중인 내용과 스크롤 위치는 재시작 후 복원되지 않습니다.
+앱을 닫으면 사용자 탭 URL만 저장하고 다음 실행 때 복원합니다. 페이지 안의 입력 중인 내용과 스크롤 위치는 재시작 후 복원되지 않습니다.
 사이트가 `window.open()`으로 여는 팝업은 같은 작업 공간의 새 탭에 연결됩니다. 팝업에서 `window.opener` 통신과 `window.close()`가 동작합니다.
 
 ## 현재 범위

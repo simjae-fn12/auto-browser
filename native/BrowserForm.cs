@@ -11,13 +11,16 @@ namespace EgoWindowsNative;
 
 public sealed class BrowserForm : Form
 {
-    private sealed class BrowserTab(int id, string space, TabPage page, WebView2 view)
+    private sealed class BrowserTab(int id, string space, TabPage page, WebView2 view, string owner)
     {
         public int Id { get; } = id;
         public string Space { get; } = space;
         public bool Agent => Space != "user";
         public TabPage Page { get; } = page;
         public WebView2 View { get; } = view;
+        public string Owner { get; } = owner;
+        public DateTime LastUsed { get; set; } = DateTime.UtcNow;
+        public int PendingCommands { get; set; }
         public Dictionary<string, CoreWebView2Frame> Frames { get; } = [];
     }
 
@@ -30,6 +33,7 @@ public sealed class BrowserForm : Form
     private readonly TextBox address = new() { Dock = DockStyle.Fill, PlaceholderText = "주소 또는 검색" };
     private readonly Dictionary<int, BrowserTab> browserTabs = [];
     private readonly HashSet<string> spaces = new(StringComparer.Ordinal);
+    private readonly System.Windows.Forms.Timer cleanupTimer = new() { Interval = 60000 };
     private CoreWebView2Environment? environment;
     private HttpListener? listener;
     private string? connectionFile;
@@ -68,8 +72,10 @@ public sealed class BrowserForm : Form
         KeyDown += OnShortcut;
         Shown += async (_, _) => await InitializeAsync();
         FormClosing += (_, _) => SaveTabs();
+        cleanupTimer.Tick += (_, _) => CleanupIdleTabs();
         FormClosed += (_, _) =>
         {
+            cleanupTimer.Dispose();
             listener?.Close();
             if (connectionFile != null) File.Delete(connectionFile);
         };
@@ -92,12 +98,8 @@ public sealed class BrowserForm : Form
             var userTabs = saved.Where(tab => tab.Space == "user").ToArray();
             foreach (var tab in userTabs.Length == 0 ? [new SavedTab(Home, "user")] : userTabs)
                 await CreateTabAsync(tab.Url, "user", true);
-            foreach (var tab in saved.Where(tab => tab.Space != "user"))
-            {
-                spaces.Add(tab.Space);
-                await CreateTabAsync(tab.Url, tab.Space, false);
-            }
             StartServer();
+            cleanupTimer.Start();
         }
         catch (Exception ex)
         {
@@ -116,7 +118,7 @@ public sealed class BrowserForm : Form
                 : (root?["tabs"]?.AsArray() ?? []).Select(tab => new SavedTab(
                     tab?["url"]?.GetValue<string>() ?? "", tab?["space"]?.GetValue<string>() ?? "user"));
             return items.Where(tab => Uri.TryCreate(tab.Url, UriKind.Absolute, out var uri)
-                    && uri.Scheme is "http" or "https" && tab.Space.Length is > 0 and <= 80)
+                    && uri.Scheme is "http" or "https" && tab.Space == "user")
                 .Take(50).ToArray();
         }
         catch { return []; }
@@ -125,19 +127,22 @@ public sealed class BrowserForm : Form
     private void SaveTabs()
     {
         if (!Directory.Exists(dataDir)) return;
-        var saved = browserTabs.Values.Select(tab => new { url = tab.View.Source?.ToString(), space = tab.Space })
+        var saved = browserTabs.Values.Where(tab => !tab.Agent).Select(tab => new { url = tab.View.Source?.ToString(), space = tab.Space })
             .Where(tab => tab.url?.StartsWith("http", StringComparison.OrdinalIgnoreCase) == true).ToArray();
         File.WriteAllText(Path.Combine(dataDir, "tabs.json"), JsonSerializer.Serialize(new { tabs = saved }));
     }
 
-    private async Task<BrowserTab> CreateTabAsync(string? url, string space, bool select, bool navigate = true)
+    private async Task<BrowserTab> CreateTabAsync(string? url, string space, bool select, bool navigate = true, string owner = "")
     {
         if (environment == null) throw new InvalidOperationException("Browser is not ready");
+        if (space != "user" && (browserTabs.Values.Count(tab => tab.Agent) >= 60
+            || browserTabs.Values.Count(tab => tab.Space == space) >= 20))
+            throw new InvalidOperationException("Agent tab limit reached (20 per space, 60 total). Close unused tabs first.");
         var id = nextId++;
         var page = new TabPage(space == "user" ? "새 탭" : $"◆ {space} {id}");
         var view = new WebView2 { Dock = DockStyle.Fill };
         page.Controls.Add(view);
-        var tab = new BrowserTab(id, space, page, view);
+        var tab = new BrowserTab(id, space, page, view, owner);
         browserTabs.Add(id, tab);
         tabs.TabPages.Add(page);
         if (select) tabs.SelectedTab = page;
@@ -158,13 +163,14 @@ public sealed class BrowserForm : Form
                 var deferral = e.GetDeferral();
                 try
                 {
-                    var popup = await CreateTabAsync(null, tab.Space, !tab.Agent, navigate: false);
+                    var popup = await CreateTabAsync(null, tab.Space, !tab.Agent, navigate: false, owner: tab.Owner);
                     e.NewWindow = popup.View.CoreWebView2;
+                    e.Handled = true;
                 }
                 catch
                 {
-                    // Let WebView2 open its fallback popup if a tab cannot be created.
-                    e.Handled = false;
+                    // Agent popups must not escape tab limits into unmanaged windows.
+                    e.Handled = tab.Agent;
                 }
                 finally { deferral.Complete(); }
             };
@@ -219,11 +225,23 @@ public sealed class BrowserForm : Form
 
     private void CloseTab(BrowserTab tab)
     {
-        browserTabs.Remove(tab.Id);
+        if (!browserTabs.Remove(tab.Id)) return;
         tabs.TabPages.Remove(tab.Page);
+        tab.Frames.Clear();
         tab.View.Dispose();
         tab.Page.Dispose();
+        if (tab.Agent && !browserTabs.Values.Any(other => other.Space == tab.Space)) spaces.Remove(tab.Space);
         if (browserTabs.Count == 0) _ = CreateTabAsync(Home, "user", true);
+    }
+
+    private void CleanupIdleTabs()
+    {
+        var cutoff = DateTime.UtcNow.AddMinutes(-15);
+        foreach (var group in browserTabs.Values.Where(tab => tab.Agent).GroupBy(tab => tab.Space).ToArray())
+        {
+            if (group.Any(tab => tab.PendingCommands > 0 || tab.LastUsed > cutoff || tab == Active())) continue;
+            foreach (var tab in group.ToArray()) CloseTab(tab);
+        }
     }
 
     private object State(string? space = null) => new
@@ -284,6 +302,7 @@ public sealed class BrowserForm : Form
                 catch (Exception ex) { source.SetException(ex); }
             }));
             await RespondAsync(context, 200, await source.Task);
+            if (Read(request.RootElement, "command") == "shutdown") BeginInvoke(new Action(Close));
         }
         catch (Exception ex)
         {
@@ -305,6 +324,17 @@ public sealed class BrowserForm : Form
     {
         var command = Read(body, "command");
         var requestedSpace = Read(body, "space");
+        var owner = Read(body, "owner");
+        if (command is "cleanup-run" or "heartbeat")
+        {
+            if (string.IsNullOrWhiteSpace(owner)) throw new InvalidOperationException("Run owner required");
+            var owned = browserTabs.Values.Where(tab => tab.Agent && tab.Owner == owner).ToArray();
+            foreach (var ownedTab in owned)
+                if (command == "cleanup-run") CloseTab(ownedTab);
+                else ownedTab.LastUsed = DateTime.UtcNow;
+            return new { ok = true, count = owned.Length };
+        }
+        if (command == "shutdown") return new { ok = true };
         if (command == "save") { SaveTabs(); return new { ok = true }; }
         if (command == "spaces") return spaces.Select(space => new
         {
@@ -319,19 +349,29 @@ public sealed class BrowserForm : Form
             spaces.Add(requestedSpace);
             return State(requestedSpace);
         }
-        if (command == "list") return State(requestedSpace.Length == 0 ? null : requestedSpace);
+        if (command == "list")
+        {
+            foreach (var listedTab in browserTabs.Values.Where(tab => tab.Space == requestedSpace))
+                listedTab.LastUsed = DateTime.UtcNow;
+            return State(requestedSpace.Length == 0 ? null : requestedSpace);
+        }
         if (command == "new")
         {
             if (requestedSpace == "user") throw new InvalidOperationException("User tabs cannot be created by an agent");
             var space = requestedSpace.Length == 0 ? "legacy" : requestedSpace;
             spaces.Add(space);
-            return new { id = (await CreateTabAsync(Read(body, "url"), space, false)).Id };
+            return new { id = (await CreateTabAsync(Read(body, "url"), space, false, owner: owner)).Id };
         }
         var tab = browserTabs.GetValueOrDefault(int.TryParse(Read(body, "id"), out var id) ? id : -1)
             ?? throw new InvalidOperationException("Unknown tab");
         if (requestedSpace.Length > 0 && tab.Space != requestedSpace)
             throw new InvalidOperationException("Tab belongs to another space");
+        if (command == "close") { CloseTab(tab); return new { ok = true }; }
         var core = tab.View.CoreWebView2 ?? throw new InvalidOperationException("Tab is not ready");
+        tab.LastUsed = DateTime.UtcNow;
+        tab.PendingCommands++;
+        try
+        {
         switch (command)
         {
             case "show": tabs.SelectedTab = tab.Page; return new { id = tab.Id };
@@ -351,9 +391,10 @@ public sealed class BrowserForm : Form
                     await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
                     return new { png = Convert.ToBase64String(image.ToArray()) };
                 }
-            case "close": CloseTab(tab); return new { ok = true };
             default: throw new InvalidOperationException($"Unknown command: {command}");
         }
+        }
+        finally { tab.PendingCommands--; tab.LastUsed = DateTime.UtcNow; }
     }
 
     private static string Read(JsonElement body, string name)

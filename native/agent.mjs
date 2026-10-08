@@ -1,6 +1,12 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+
+const owner = randomUUID();
+const args = process.argv.slice(2);
+const keepTabs = args.includes('--keep-tabs');
+const scriptPath = args.find(arg => arg !== '--keep-tabs');
 
 const connectionPath = process.env.EGO_NATIVE_CONNECTION
   || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'ego-windows-native', 'connection.json');
@@ -13,6 +19,7 @@ async function call(command, args = {}) {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${connection.token}` },
     body: JSON.stringify({ command, ...args }),
+    signal: AbortSignal.timeout(45000),
   });
   const result = await response.json();
   if (!response.ok) throw new Error(`${command}: ${result.error || response.status}`);
@@ -20,7 +27,7 @@ async function call(command, args = {}) {
 }
 
 function scoped(space) {
-  const send = (command, args = {}) => call(command, { space, ...args });
+  const send = (command, args = {}) => call(command, { space, owner, ...args });
   return Object.freeze({
     name: space,
     list: () => send('list'),
@@ -54,8 +61,8 @@ const browser = Object.freeze({
   },
 });
 
-const source = process.argv[2]
-  ? await fs.readFile(process.argv[2], 'utf8')
+const source = scriptPath
+  ? await fs.readFile(scriptPath, 'utf8')
   : await new Promise((resolve, reject) => {
       let input = '';
       process.stdin.setEncoding('utf8');
@@ -65,4 +72,29 @@ const source = process.argv[2]
     });
 if (!source.trim()) throw new Error('JavaScript를 표준 입력으로 전달하거나 스크립트 파일 경로를 지정하세요.');
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-await new AsyncFunction('browser', source)(browser);
+let cleanupPromise;
+function cleanup() {
+  return cleanupPromise ??= call('cleanup-run', { owner }).catch(error => {
+    console.error(`Agent tab cleanup failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}
+const heartbeat = setInterval(() => {
+  call('heartbeat', { owner }).catch(error => console.error(`Agent heartbeat failed: ${error.message}`));
+}, 30000);
+heartbeat.unref();
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, async () => {
+    clearInterval(heartbeat);
+    await cleanup();
+    process.exit(signal === 'SIGINT' ? 130 : 143);
+  });
+}
+let succeeded = false;
+try {
+  await new AsyncFunction('browser', source)(browser);
+  succeeded = true;
+} finally {
+  clearInterval(heartbeat);
+  if (!keepTabs || !succeeded) await cleanup();
+}

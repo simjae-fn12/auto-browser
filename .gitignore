@@ -8,3 +8,5 @@ native/.test-profile*/
 native/.*-test-profile/
 native/*.user
 native/native-test.png
+tests/**/bin/
+tests/**/obj/
