@@ -12,6 +12,10 @@ Run commands only in your own headless workspace. Never attach to, send input to
 
     node agent.mjs --keep-tabs step1.mjs
 
+On Windows, use the PowerShell tool when Bash is unavailable. The node runner works in either shell; installing Git Bash is not required.
+
+After a browser restart, find the previous task's tab by URL and space, then take a fresh snapshot. The visible tab may be unrelated; do not treat it as the task target just because it is active. Use your space's list() to find restored task tabs. If missing, reopen the known task URL from conversation history. Old tab IDs and element references are invalid. Conversation history and login storage may survive, but unsaved page memory does not. Inspect the site's saved draft before continuing an interrupted edit, and avoid repeating completed actions.
+
 The script body runs as an async function with `browser` in scope. Print only what you need with `console.log` (selected fields, sliced text), never whole snapshots.
 
 ### The person's current tab

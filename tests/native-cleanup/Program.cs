@@ -13,6 +13,14 @@ static class Program
         ApplicationConfiguration.Initialize();
         using var form = new BrowserForm();
         var type = typeof(BrowserForm);
+        string Normalize(string input) => (string)type.GetMethod("NormalizeUrl", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [input])!;
+        if (Normalize("file:///C:/Temp/card.html") != "file:///C:/Temp/card.html"
+            || Normalize(@"C:\Temp\my card.html") != "file:///C:/Temp/my%20card.html"
+            || Normalize("about:blank") != "about:blank"
+            || Normalize("example.com") != "https://example.com"
+            || !Normalize("search words").StartsWith("https://www.google.com/search?q="))
+            throw new Exception("Local file and web address normalization failed");
+        Console.WriteLine("PASS file URLs, Windows paths, blank pages, web domains and searches normalize correctly");
         var tabType = type.GetNestedType("BrowserTab", BindingFlags.NonPublic)!;
         var tabs = (IDictionary)type.GetField("browserTabs", Private)!.GetValue(form)!;
         var control = (TabControl)type.GetField("tabs", Private)!.GetValue(form)!;

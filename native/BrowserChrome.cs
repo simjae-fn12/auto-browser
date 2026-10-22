@@ -73,7 +73,12 @@ public sealed partial class BrowserForm
         switch (Read(message, "type"))
         {
             case "ready": chromeReady = true; RefreshSidebar(); PostAssistantStatus(); LoadAssistantHistory(); break;
-            case "ai.send": StartAssistant(Read(message, "engine"), Read(message, "text"), Read(message, "context") == "True"); break;
+            case "ai.send": SubmitAssistant(Read(message, "engine"), Read(message, "text"), Read(message, "context") == "True"); break;
+            case "ai.queueRemove": RemoveQueuedPrompt(Read(message, "engine"), Read(message, "id")); break;
+            case "ai.queueRun": RunNextPrompt(Read(message, "engine")); break;
+            case "ai.attach": AddImage(Read(message, "engine"), Read(message, "name"), Read(message, "data"), Read(message, "preview")); break;
+            case "ai.removeImage": RemoveImage(Read(message, "engine"), Read(message, "id")); break;
+            case "ai.handoff": HandoffConversation(Read(message, "source"), Read(message, "id"), Read(message, "engine")); break;
             case "ai.stop": StopAssistant(Read(message, "engine")); break;
             case "ai.reset": SelectConversation(Read(message, "engine")); break;
             case "ai.select": SelectConversation(Read(message, "engine"), Read(message, "id")); break;

@@ -13,6 +13,7 @@ public sealed partial class BrowserForm
     private static readonly string[] Engines = ["claude", "codex"];
     private readonly Dictionary<string, Process> aiRuns = [];
     private readonly Dictionary<string, string> aiSessions = [];
+    private readonly string browserRuntime = Guid.NewGuid().ToString("N");
     private string AssistantDir => Path.Combine(dataDir, "assistant");
 
     private string PrepareAssistantWorkspace(string engine)
@@ -65,6 +66,13 @@ public sealed partial class BrowserForm
 
     private void PostAssistant(string engine, object data)
     {
+        var entry = JsonSerializer.SerializeToNode(data);
+        if (entry?["kind"]?.ToString() == "done" && currentConversations.TryGetValue(engine, out var chat))
+        {
+            chat.Running = false;
+            chat.Interrupted = entry["error"] != null;
+            PostChrome(new { type = "ai.recovery", engine, interrupted = chat.Interrupted });
+        }
         RecordAssistant(engine, data);
         PostChrome(new { type = "ai", engine, @event = data });
     }
@@ -83,12 +91,11 @@ public sealed partial class BrowserForm
         info.Environment["NO_COLOR"] = "1";
     }
 
-    private void StartAssistant(string engine, string text, bool withContext)
+    private void StartAssistant(string engine, string text, bool withContext, string submittedContext = "")
     {
-        if (!Engines.Contains(engine) || aiRuns.ContainsKey(engine) || string.IsNullOrWhiteSpace(text)) return;
+        if (!Engines.Contains(engine) || aiRuns.ContainsKey(engine) || (string.IsNullOrWhiteSpace(text) && pendingImages[engine].Count == 0)) return;
         LoadAssistantHistory();
         var conversation = currentConversations[engine];
-        RecordAssistant(engine, new { kind = "user", text });
         var exe = FindTool(engine);
         if (exe == null)
         {
@@ -98,25 +105,42 @@ public sealed partial class BrowserForm
             PostAssistantStatus();
             return;
         }
-        var prompt = text.Trim();
+        var prompt = string.IsNullOrWhiteSpace(text) ? "첨부한 사진을 살펴봐 주세요." : text.Trim();
+        prompt = submittedContext + prompt;
         if (withContext && Active() is { } tab && tab.View.Source is { } source)
             prompt = $"[pluck] 사용자가 보고 있는 탭: \"{tab.View.CoreWebView2?.DocumentTitle}\" — {source} (tab id {tab.Id})\n\n{prompt}";
 
         var workspace = PrepareAssistantWorkspace(engine);
+        var attachments = pendingImages[engine].ToArray();
+        var images = (conversation.NeedsContext ? HandoffImages(conversation) : [])
+            .Concat(attachments).DistinctBy(image => image.Id).TakeLast(6).ToArray();
+        if (images.Any(image => !File.Exists(ImagePath(image))))
+        {
+            PostAssistant(engine, new { kind = "error", text = "첨부한 사진 파일을 찾을 수 없습니다. 다시 첨부해 주세요." });
+            PostAssistantStatus();
+            return;
+        }
+        if (conversation.NeedsContext) prompt = HandoffContext(conversation, workspace) + prompt;
+        if (conversation.BrowserRuntime != browserRuntime)
+            prompt = "[Browser restarted or new session] Previous tab IDs and element references may be stale. Match the prior task to the current tabs by URL and space, then take a fresh snapshot. The visible tab may be unrelated: do not switch the task to it merely because it is active. If the task tab is missing, reopen its known URL from the conversation and inspect the site's saved draft before repeating edits. Unsaved page memory may be lost. Current tabs: "
+                + JsonSerializer.Serialize(State()) + "\n\n" + prompt;
+        if (images.Length > 0)
+            prompt += "\n\n[Attached images, in order]\n" + string.Join("\n", images.Select(image => image.Name + ": " + ImagePath(image)));
+        PostAssistant(engine, new { kind = "user", text, images = attachments });
         var info = new ProcessStartInfo(exe)
         {
             WorkingDirectory = workspace,
             UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
+            StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
         };
         if (connectionFile != null) info.Environment["PLUCK_NATIVE_CONNECTION"] = connectionFile;
         IsolateAssistantEnvironment(info);
         var session = aiSessions.GetValueOrDefault(engine);
         if (engine == "claude")
         {
-            foreach (var arg in new[] { "-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-                "--permission-mode", "acceptEdits", "--allowedTools", "Bash(node:*),WebSearch,WebFetch" })
+            foreach (var arg in new[] { "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+                "--permission-mode", "acceptEdits", "--allowedTools", "Bash(node:*),PowerShell(node *),Read,WebSearch,WebFetch" })
                 info.ArgumentList.Add(arg);
             if (session != null) { info.ArgumentList.Add("--resume"); info.ArgumentList.Add(session); }
         }
@@ -125,8 +149,11 @@ public sealed partial class BrowserForm
             info.ArgumentList.Add("exec");
             if (session != null) { info.ArgumentList.Add("resume"); info.ArgumentList.Add(session); }
             foreach (var arg in new[] { "--json", "--skip-git-repo-check",
-                "-c", "sandbox_mode=\"workspace-write\"", "-c", "sandbox_workspace_write.network_access=true", prompt })
+                "-c", "sandbox_mode=\"workspace-write\"", "-c", "sandbox_workspace_write.network_access=true" })
                 info.ArgumentList.Add(arg);
+            foreach (var image in images) { info.ArgumentList.Add("--image"); info.ArgumentList.Add(ImagePath(image)); }
+            info.ArgumentList.Add("--");
+            info.ArgumentList.Add("-");
         }
 
         var process = new Process { StartInfo = info, EnableRaisingEvents = true };
@@ -138,8 +165,14 @@ public sealed partial class BrowserForm
             PostAssistantStatus();
             return;
         }
-        process.StandardInput.Close();
         aiRuns[engine] = process;
+        conversation.Running = true;
+        conversation.Interrupted = false;
+        conversation.BrowserRuntime = browserRuntime;
+        PostChrome(new { type = "ai.recovery", engine, interrupted = false });
+        FlushAssistantHistory();
+        pendingImages[engine].Clear();
+        PostImages(engine);
         PostAssistantStatus();
 
         var errors = new Queue<string>();
@@ -149,8 +182,25 @@ public sealed partial class BrowserForm
         void Emit(JsonObject data) => BeginInvoke(() =>
         {
             if (!Current()) return;
-            if (data["kind"]?.GetValue<string>() == "done") finished = true;
+            if (data["kind"]?.GetValue<string>() == "done")
+            {
+                finished = true;
+                if (data["error"] == null && conversation.Session != null) conversation.NeedsContext = false;
+            }
             PostAssistant(engine, data);
+        });
+        var input = Task.Run(async () =>
+        {
+            try
+            {
+                await process.StandardInput.WriteLineAsync(engine == "claude" ? ClaudeInput(prompt, images) : prompt);
+                process.StandardInput.Close();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ObjectDisposedException)
+            {
+                Emit(new JsonObject { ["kind"] = "error", ["text"] = "메시지 또는 사진을 전달하지 못했습니다: " + ex.Message });
+                try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+            }
         });
         var stderr = Task.Run(async () =>
         {
@@ -185,6 +235,7 @@ public sealed partial class BrowserForm
             }
             await process.WaitForExitAsync();
             await stderr;
+            await input;
             BeginInvoke(() =>
             {
                 if (!Current()) { process.Dispose(); return; }
@@ -199,6 +250,7 @@ public sealed partial class BrowserForm
                 }
                 PostAssistantStatus();
                 process.Dispose();
+                if (!conversation.Interrupted) RunNextPrompt(engine);
             });
         });
     }
@@ -215,6 +267,8 @@ public sealed partial class BrowserForm
 
     private void StopAllAssistants()
     {
+        foreach (var engine in aiRuns.Keys)
+            if (currentConversations.TryGetValue(engine, out var chat)) { chat.Running = false; chat.Interrupted = true; }
         foreach (var process in aiRuns.Values.ToArray())
             try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
         aiRuns.Clear();

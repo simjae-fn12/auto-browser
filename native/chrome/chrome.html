@@ -224,6 +224,20 @@ body.collapsed .tab .title, body.collapsed .tab .close, body.collapsed .tab .bus
 }
 @keyframes ping { 0% { transform: scale(1); opacity: .6; } 100% { transform: scale(2.8); opacity: 0; } }
 
+#handoff { display:flex;align-items:center;gap:8px;margin:0 14px 8px;padding:10px;border-radius:9px;background:var(--hover);font-size:12px; }
+#handoff[hidden] { display:none; }
+#handoff span { flex:1; }
+#handoffGo { color:var(--accent-strong);font-weight:600; }
+.image-strip { display:flex;flex-wrap:wrap;gap:7px; }
+.image-tile { position:relative;margin:6px 0; }
+.image-tile img { width:64px;height:64px;object-fit:cover;border-radius:7px;border:1px solid var(--line); }
+.image-tile button { position:absolute;right:-4px;top:-4px;width:19px;height:19px;border-radius:50%;background:var(--ink);color:var(--surface); }
+#imageError { font-size:12px;color:var(--claude);padding:0 10px; }
+.composer.drag-images { outline:2px solid var(--accent-strong); }
+#aiStop[hidden] { display:none; }
+.composer #attachImage { width:28px;height:28px; }
+.composer .ctx { min-width:0;flex-shrink:1; }
+
 /* Footer */
 #footer { flex:none; padding:8px 10px; border-top:1px solid var(--line); }
 #tabSearch { display:flex;align-items:center;gap:10px;width:100%;height:36px;padding:0 12px;border-radius:8px;color:var(--muted);white-space:nowrap; }
@@ -448,11 +462,19 @@ body.assist #assist .card { opacity: 1; transform: none; }
       <select id="aiHistory" aria-label="이전 대화" style="margin:8px 14px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)"></select>
       <label style="padding:0 16px 8px;font-size:12px;color:var(--muted)"><input id="aiFollow" type="checkbox" checked> AI가 조작하는 탭 따라보기</label>
       <div id="aiActivity" role="status" hidden style="padding:10px 16px;color:var(--accent-strong);font-size:12px"></div>
+      <button id="resumeWork" hidden style="margin:0 14px 8px;padding:10px;border-radius:9px;background:var(--hover);color:var(--accent-strong)">중단된 작업 이어가기</button>
+      <div id="handoff" hidden><span></span><button id="handoffGo">이 대화 이어받기</button><button id="handoffDismiss" aria-label="이어받기 안내 닫기">×</button></div>
       <div class="logs"><div class="log" data-engine="claude"></div><div class="log" data-engine="codex" hidden></div></div>
+      <div id="aiQueue" hidden style="margin:4px 14px;max-height:140px;overflow:auto;font-size:12px"></div>
       <div class="composer">
+        <div id="imageDrafts" class="image-strip"></div>
+        <div id="imageError" role="status"></div>
+        <input id="imagePicker" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
         <textarea id="aiInput" rows="1" spellcheck="false"></textarea>
         <div class="bar">
+          <button id="attachImage" class="icon-btn" title="사진 첨부 · 붙여넣기 또는 드래그도 가능" aria-label="사진 첨부"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 6-6 4 4 3-3 5 5"/></svg></button>
           <button class="ctx on" id="aiCtx" title="현재 탭 정보를 함께 보내기"><svg><use href="#i-tab"/></svg><span>현재 탭</span></button>
+          <button class="send stop" id="aiStop" title="현재 작업 중지" aria-label="현재 작업 중지" hidden><svg><use href="#i-stop"/></svg></button>
           <button class="send" id="aiSend" title="보내기 (Enter)" disabled><svg><use href="#i-send"/></svg></button>
         </div>
       </div>
@@ -872,6 +894,12 @@ const ai = {
   streaming: { claude: null, codex: null },
   tools: { claude: new Map(), codex: new Map() },
   usage: null,
+  images: { claude: [], codex: [] },
+  drafts: { claude: '', codex: '' },
+  queue: { claude: [], codex: [] },
+  uploading: 0,
+  handoff: null,
+  interrupted: { claude: false, codex: false },
   history: {},
 };
 const aiInput = $('#aiInput');
@@ -974,6 +1002,7 @@ function handleAi(engine, event) {
       const el = document.createElement('div');
       el.className = 'msg me';
       el.textContent = event.text;
+      addImagePreviews(el, event.images ?? []);
       append(engine, el);
       break;
     }
@@ -1069,6 +1098,11 @@ function renderUsage() {
 }
 
 function renderAiChrome() {
+  $('#resumeWork').hidden = !ai.interrupted[ai.engine] || !!ai.status[ai.engine]?.running;
+  const transfer = ai.handoff;
+  $('#handoff').hidden = !transfer || transfer.target !== ai.engine;
+  if (transfer) $('#handoff span').textContent = `${ENGINES[transfer.source].label}에서 하던 대화`;
+  $('#handoffGo').disabled = !!ai.status[ai.engine]?.running;
   const history = ai.history[ai.engine];
   const select = $('#aiHistory');
   if (select.history !== history) {
@@ -1097,17 +1131,37 @@ function renderAiChrome() {
   }
   document.querySelectorAll('.log').forEach(log => { log.hidden = log.dataset.engine !== ai.engine; });
   const running = !!ai.status[ai.engine]?.running;
-  aiSend.classList.toggle('stop', running);
-  if (aiSend.dataset.running !== String(running)) {
-    aiSend.dataset.running = String(running);
-    aiSend.innerHTML = icon(running ? 'stop' : 'send');
-  }
-  aiSend.title = running ? '중지' : '보내기 (Enter)';
-  aiSend.disabled = !running && (!aiInput.value.trim() || ai.status[ai.engine]?.available === false);
-  aiInput.placeholder = `${ENGINES[ai.engine].label}에게 요청하기…`;
+  $('#aiStop').hidden = !running;
+  aiSend.title = running ? '다음 요청 보내기 (Enter)' : '보내기 (Enter)';
+  aiSend.disabled = (!aiInput.value.trim() && !ai.images[ai.engine].length) || ai.uploading > 0 || ai.status[ai.engine]?.available === false;
+  aiInput.placeholder = running ? '다음 요청 입력… (현재 답변 후 순서대로 실행)' : `${ENGINES[ai.engine].label}에게 요청하기…`;
+  renderQueue();
   $('#assistBtn').classList.toggle('on', document.body.classList.contains('assist'));
   renderUsage();
   renderContext();
+}
+function renderQueue() {
+  const container = $('#aiQueue'), items = ai.queue[ai.engine], running = !!ai.status[ai.engine]?.running;
+  container.hidden = !items.length;
+  if (container.items === items && container.engine === ai.engine && container.running === running) return;
+  container.items = items; container.engine = ai.engine; container.running = running;
+  container.replaceChildren();
+  if (!items.length) return;
+  const heading = document.createElement('div');
+  heading.textContent = `대기 중 ${items.length} · ${running ? '현재 답변 후 순서대로 실행' : '실행 대기'}`;
+  container.append(heading);
+  if (!running) {
+    const resume = document.createElement('button'); resume.textContent = '대기 요청 실행';
+    resume.onclick = () => send('ai.queueRun', { engine: ai.engine }); container.append(resume);
+  }
+  for (const item of items) {
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;align-items:center;padding:5px 0';
+    const label = document.createElement('span'); label.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    label.textContent = (item.text || '사진 첨부') + (item.images ? ` · 사진 ${item.images}장` : ''); label.title = label.textContent;
+    const remove = document.createElement('button'); remove.textContent = '×'; remove.title = '대기 요청 취소';
+    remove.onclick = () => send('ai.queueRemove', { engine: ai.engine, id: item.id });
+    row.append(label, remove); container.append(row);
+  }
 }
 function renderContext() {
   const tab = state.tabs.find(item => item.id === state.active);
@@ -1118,16 +1172,12 @@ function renderContext() {
 
 function sendPrompt(text) {
   text = text.trim();
-  if (!text || ai.status[ai.engine]?.running) return;
-  const tab = state.tabs.find(item => item.id === state.active);
-  const el = document.createElement('div');
-  el.className = 'msg me';
-  el.innerHTML = (ai.context && tab ? `<span class="ctx-ref">↳ ${escapeHtml(tabTitle(tab))}</span>` : '') + escapeHtml(text);
-  append(ai.engine, el);
+  if ((!text && !ai.images[ai.engine].length) || ai.uploading) return;
   ai.status[ai.engine] = { ...ai.status[ai.engine], running: true };
   setTyping(ai.engine, true);
   send('ai.send', { engine: ai.engine, text, context: ai.context });
   aiInput.value = '';
+  ai.drafts[ai.engine] = '';
   autosize();
   renderAiChrome();
 }
@@ -1147,18 +1197,30 @@ function toggleAssist(open = !document.body.classList.contains('assist')) {
 
 for (const engine of Object.keys(ENGINES)) resetLog(engine);
 document.querySelectorAll('.seg button').forEach(button => button.addEventListener('click', () => {
-  ai.engine = button.dataset.engine;
+  const source = ai.engine, target = button.dataset.engine;
+  if (source !== target) {
+    ai.drafts[source] = aiInput.value;
+    ai.handoff = logOf(source).querySelector('.msg') && ai.history[source]
+      ? { source, target, id: ai.history[source].selected } : null;
+    ai.engine = target;
+    aiInput.value = ai.drafts[target];
+    autosize();
+    renderImageDrafts();
+  }
   renderAiChrome();
   aiInput.focus();
 }));
+$('#handoffGo').addEventListener('click', () => {
+  if (ai.handoff) send('ai.handoff', { source: ai.handoff.source, id: ai.handoff.id, engine: ai.engine });
+});
+$('#handoffDismiss').addEventListener('click', () => { ai.handoff = null; renderAiChrome(); });
+$('#resumeWork').addEventListener('click', () => sendPrompt('현재 브라우저와 임시저장 상태부터 확인하고, 중단된 작업을 이어서 진행해줘. 이미 완료한 작업은 중복 실행하지 마.'));
 aiInput.addEventListener('input', () => { autosize(); renderAiChrome(); });
 aiInput.addEventListener('keydown', event => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendPrompt(aiInput.value); }
 });
-aiSend.addEventListener('click', () => {
-  if (ai.status[ai.engine]?.running) send('ai.stop', { engine: ai.engine });
-  else sendPrompt(aiInput.value);
-});
+aiSend.addEventListener('click', () => sendPrompt(aiInput.value));
+$('#aiStop').addEventListener('click', () => send('ai.stop', { engine: ai.engine }));
 $('#aiCtx').addEventListener('click', () => { ai.context = !ai.context; renderContext(); });
 $('#aiReset').addEventListener('click', () => {
   send('ai.reset', { engine: ai.engine });
@@ -1174,6 +1236,62 @@ $('#assist').addEventListener('click', event => {
   if (!link) return;
   event.preventDefault();
   send('open', { url: link.getAttribute('href'), newTab: true });
+});
+
+function addImagePreviews(parent, images, removable = false) {
+  if (!images.length) return;
+  const strip = document.createElement('div'); strip.className = 'image-strip';
+  for (const item of images) {
+    const tile = document.createElement('div'); tile.className = 'image-tile'; tile.title = item.Name;
+    const img = document.createElement('img'); img.alt = item.Name;
+    if (item.Preview?.startsWith('data:image/png;base64,')) img.src = item.Preview;
+    tile.append(img);
+    if (removable) {
+      const remove = document.createElement('button'); remove.textContent = '×'; remove.title = '첨부 제거';
+      remove.addEventListener('click', () => send('ai.removeImage', { engine: ai.engine, id: item.Id }));
+      tile.append(remove);
+    }
+    strip.append(tile);
+  }
+  parent.append(strip);
+}
+function renderImageDrafts() {
+  const container = $('#imageDrafts'); container.replaceChildren();
+  addImagePreviews(container, ai.images[ai.engine], true);
+}
+async function attachImages(files) {
+  const engine = ai.engine;
+  $('#imageError').textContent = '';
+  const selected = [...files];
+  if (selected.length + ai.images[engine].length > 6) { $('#imageError').textContent = '사진은 한 번에 6장까지 첨부할 수 있습니다.'; return; }
+  ai.uploading++; renderAiChrome();
+  try {
+    for (const file of selected) {
+      if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type) || file.size > 5 * 1024 * 1024)
+        throw new Error('5MB 이하의 PNG, JPEG, GIF, WebP 사진을 선택해 주세요.');
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file);
+      });
+      const img = new Image(); img.src = data; await img.decode();
+      const scale = Math.min(1, 192 / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      send('ai.attach', { engine, name: file.name || '붙여넣은 사진.png', data, preview: canvas.toDataURL('image/png') });
+    }
+  } catch (error) { $('#imageError').textContent = error.message || '사진을 불러오지 못했습니다.'; }
+  finally { ai.uploading--; renderAiChrome(); }
+}
+$('#attachImage').addEventListener('click', () => $('#imagePicker').click());
+$('#imagePicker').addEventListener('change', event => { attachImages(event.target.files); event.target.value = ''; });
+$('.composer').addEventListener('paste', event => {
+  const files = [...(event.clipboardData?.files ?? [])].filter(file => file.type.startsWith('image/'));
+  if (files.length) { event.preventDefault(); attachImages(files); }
+});
+$('.composer').addEventListener('dragover', event => { event.preventDefault(); event.currentTarget.classList.add('drag-images'); });
+$('.composer').addEventListener('dragleave', event => event.currentTarget.classList.remove('drag-images'));
+$('.composer').addEventListener('drop', event => {
+  event.preventDefault(); event.currentTarget.classList.remove('drag-images'); attachImages(event.dataTransfer.files);
 });
 
 /* ---------- Host wiring ---------- */
@@ -1258,12 +1376,29 @@ webview?.addEventListener('message', event => {
     state = message;
     render();
     if (collapsedChanged) followLayout(400);
+  } else if (message.type === 'ai.queue') {
+    ai.queue[message.engine] = message.items; renderAiChrome();
+  } else if (message.type === 'ai.images') {
+    ai.images[message.engine] = message.images;
+    renderImageDrafts(); renderAiChrome();
+  } else if (message.type === 'ai.imageError') {
+    $('#imageError').textContent = message.text;
+  } else if (message.type === 'ai.handoffReady') {
+    ai.handoff = null;
+    ai.engine = message.engine;
+    aiInput.value = ''; ai.drafts[ai.engine] = ''; autosize();
+    renderAiChrome(); aiInput.focus();
   } else if (message.type === 'ai.history') {
     ai.history[message.engine] = message; renderAiChrome();
   } else if (message.type === 'ai.restore') {
+    ai.interrupted[message.engine] = !!message.interrupted;
     resetLog(message.engine);
     for (const item of message.events) handleAi(message.engine, item);
     handleAi(message.engine, { kind: 'done' });
+    if (message.interrupted) { ai.engine = message.engine; toggleAssist(true); }
+    renderAiChrome();
+  } else if (message.type === 'ai.recovery') {
+    ai.interrupted[message.engine] = message.interrupted; renderAiChrome();
   } else if (message.type === 'ai.historyError') {
     handleAi(ai.engine, { kind: 'error', text: message.text });
   } else if (message.type === 'activity') {

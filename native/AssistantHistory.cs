@@ -11,6 +11,12 @@ public sealed partial class BrowserForm
         public string Engine { get; set; } = "claude";
         public string Title { get; set; } = "새 대화";
         public string? Session { get; set; }
+        public bool NeedsContext { get; set; }
+        public bool Running { get; set; }
+        public bool Interrupted { get; set; }
+        public bool Selected { get; set; }
+        public string? BrowserRuntime { get; set; }
+        public List<QueuedPrompt> Pending { get; set; } = [];
         public List<JsonObject> Events { get; set; } = [];
     }
 
@@ -36,9 +42,11 @@ public sealed partial class BrowserForm
             historyWritable = false;
             PostChrome(new { type = "ai.historyError", text = "이전 대화를 읽지 못했습니다. 원본 파일을 확인해 주세요." });
         }
+        foreach (var chat in conversations.Where(c => c.Running)) { chat.Running = false; chat.Interrupted = true; }
         foreach (var engine in Engines)
         {
-            var chat = conversations.LastOrDefault(c => c.Engine == engine) ?? NewConversation(engine);
+            var chat = conversations.LastOrDefault(c => c.Engine == engine && c.Selected)
+                ?? conversations.LastOrDefault(c => c.Engine == engine) ?? NewConversation(engine);
             currentConversations[engine] = chat;
             if (chat.Session != null) aiSessions[engine] = chat.Session;
             PostConversation(engine);
@@ -47,7 +55,8 @@ public sealed partial class BrowserForm
 
     private Conversation NewConversation(string engine)
     {
-        var chat = new Conversation { Engine = engine };
+        foreach (var previous in conversations.Where(c => c.Engine == engine)) previous.Selected = false;
+        var chat = new Conversation { Engine = engine, Selected = true };
         conversations.Add(chat);
         return chat;
     }
@@ -58,7 +67,8 @@ public sealed partial class BrowserForm
     }
 
     private Conversation[] HistorySnapshot() => conversations.Select(c => new Conversation
-    { Id = c.Id, Engine = c.Engine, Title = c.Title, Session = c.Session, Events = c.Events.ToList() }).ToArray();
+    { Id = c.Id, Engine = c.Engine, Title = c.Title, Session = c.Session, NeedsContext = c.NeedsContext,
+        Running = c.Running, Interrupted = c.Interrupted, Selected = c.Selected, BrowserRuntime = c.BrowserRuntime, Pending = c.Pending.ToList(), Events = c.Events.ToList() }).ToArray();
 
     private void WriteHistory(Conversation[] snapshot)
     {
@@ -99,8 +109,9 @@ public sealed partial class BrowserForm
 
     private void PostConversation(string engine)
     {
+        PostQueue(engine);
         PostConversationList(engine);
-        PostChrome(new { type = "ai.restore", engine, events = currentConversations[engine].Events });
+        PostChrome(new { type = "ai.restore", engine, events = currentConversations[engine].Events, interrupted = currentConversations[engine].Interrupted });
     }
 
     private void SelectConversation(string engine, string? id = null)
@@ -110,7 +121,10 @@ public sealed partial class BrowserForm
         var chat = id == null ? NewConversation(engine) : conversations.FirstOrDefault(c => c.Engine == engine && c.Id == id);
         if (chat == null) return;
         StopAssistant(engine);
+        pendingImages[engine].Clear();
+        PostImages(engine);
         currentConversations[engine] = chat;
+        foreach (var previous in conversations.Where(c => c.Engine == engine)) previous.Selected = previous == chat;
         aiSessions.Remove(engine);
         if (chat.Session != null) aiSessions[engine] = chat.Session;
         SaveAssistantHistory();
@@ -124,7 +138,7 @@ public sealed partial class BrowserForm
         chat.Events.Add(entry);
         if (entry["kind"]?.ToString() == "user" && chat.Title == "새 대화")
         {
-            chat.Title = Clip(entry["text"]?.ToString(), 48);
+            chat.Title = string.IsNullOrWhiteSpace(entry["text"]?.ToString()) ? "사진을 첨부한 대화" : Clip(entry["text"]?.ToString(), 48);
             PostConversationList(engine);
         }
         // Batch disk work off the UI thread, including partial replies during long runs.

@@ -26,7 +26,7 @@ public sealed partial class BrowserForm : Form
         public Dictionary<string, CoreWebView2Frame> Frames { get; } = [];
     }
 
-    private sealed record SavedTab(string Url, string Space);
+    private sealed record SavedTab(string Url, string Space, bool Active = false);
 
     private const string Home = "https://www.google.com/";
     private readonly string dataDir = Environment.GetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR")
@@ -52,7 +52,14 @@ public sealed partial class BrowserForm : Form
         tabs.SelectedIndexChanged += (_, _) => RefreshAddress();
         KeyDown += OnShortcut;
         Shown += async (_, _) => await InitializeAsync();
-        FormClosing += (_, _) => SaveTabs();
+        FormClosing += (_, e) =>
+        {
+            if (aiRuns.Count > 0 && e.CloseReason == CloseReason.UserClosing && MessageBox.Show(this,
+                "AI가 작업 중입니다. 닫으면 작업이 중단되며 저장된 대화에서 나중에 이어갈 수 있습니다. 닫을까요?",
+                "작업 중인 대화", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+            { e.Cancel = true; return; }
+            SaveTabs();
+        };
         cleanupTimer.Tick += (_, _) => CleanupIdleTabs();
         FormClosed += (_, _) =>
         {
@@ -73,10 +80,12 @@ public sealed partial class BrowserForm : Form
             environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(dataDir, "profile"));
             await InitializeChromeAsync();
             var saved = ReadSavedTabs();
-            var userTabs = saved.Where(tab => tab.Space == "user").ToArray();
-            var restored = userTabs.Length == 0 ? [new SavedTab(Home, "user")] : userTabs;
+            var restored = saved.Length == 0 ? [new SavedTab(Home, "user")] : saved;
             for (var i = 0; i < restored.Length; i++)
-                await CreateTabAsync(restored[i].Url, "user", i == 0);
+            {
+                if (restored[i].Space != "user") spaces.Add(restored[i].Space);
+                await CreateTabAsync(restored[i].Url, restored[i].Space, restored[i].Active || (!restored.Any(tab => tab.Active) && i == 0));
+            }
             Active()?.View.Focus();
             StartServer();
             cleanupTimer.Start();
@@ -96,10 +105,13 @@ public sealed partial class BrowserForm : Form
             var items = root is JsonArray legacy
                 ? legacy.Select(url => new SavedTab(url?.GetValue<string>() ?? "", "user"))
                 : (root?["tabs"]?.AsArray() ?? []).Select(tab => new SavedTab(
-                    tab?["url"]?.GetValue<string>() ?? "", tab?["space"]?.GetValue<string>() ?? "user"));
-            return items.Where(tab => Uri.TryCreate(tab.Url, UriKind.Absolute, out var uri)
-                    && uri.Scheme is "http" or "https" && tab.Space == "user")
-                .Take(50).ToArray();
+                    tab?["url"]?.GetValue<string>() ?? "", tab?["space"]?.GetValue<string>() ?? "user", tab?["active"]?.GetValue<bool>() == true));
+            var valid = items.Where(tab => Uri.TryCreate(tab.Url, UriKind.Absolute, out var uri)
+                    && uri.Scheme is "http" or "https" or "file" && !string.IsNullOrWhiteSpace(tab.Space) && tab.Space.Length <= 80)
+                .ToArray();
+            return valid.Where(tab => tab.Space == "user").Take(50)
+                .Concat(valid.Where(tab => tab.Space != "user").GroupBy(tab => tab.Space)
+                    .SelectMany(group => group.Take(20)).Take(60)).ToArray();
         }
         catch { return []; }
     }
@@ -107,8 +119,8 @@ public sealed partial class BrowserForm : Form
     private void SaveTabs()
     {
         if (!Directory.Exists(dataDir)) return;
-        var saved = OrderedTabs().Where(tab => !tab.Agent).Select(tab => new { url = tab.View.Source?.ToString(), space = tab.Space })
-            .Where(tab => tab.url?.StartsWith("http", StringComparison.OrdinalIgnoreCase) == true).ToArray();
+        var saved = OrderedTabs().Select(tab => new { url = tab.View.Source?.ToString(), space = tab.Space, active = tab == Active() })
+            .Where(tab => Uri.TryCreate(tab.url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "file").ToArray();
         File.WriteAllText(Path.Combine(dataDir, "tabs.json"), JsonSerializer.Serialize(new { tabs = saved }));
     }
 
@@ -196,7 +208,8 @@ public sealed partial class BrowserForm : Form
     {
         var value = input?.Trim() ?? "";
         if (value.Length == 0) return Home;
-        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https") return value;
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "file") return uri.AbsoluteUri;
+        if (value.Equals("about:blank", StringComparison.OrdinalIgnoreCase)) return "about:blank";
         if (value.StartsWith("localhost", StringComparison.OrdinalIgnoreCase) || value.StartsWith("127.0.0.1")) return "http://" + value;
         if (!value.Contains(' ') && value.Contains('.')) return "https://" + value;
         return "https://www.google.com/search?q=" + Uri.EscapeDataString(value);
@@ -383,7 +396,11 @@ public sealed partial class BrowserForm : Form
                 else ownedTab.LastUsed = DateTime.UtcNow;
             return new { ok = true, count = owned.Length };
         }
-        if (command == "shutdown") return new { ok = true };
+        if (command == "shutdown")
+        {
+            if (aiRuns.Count > 0) throw new InvalidOperationException("AI 작업 중에는 자동 종료할 수 없습니다. 작업 완료 후 다시 시도하세요.");
+            return new { ok = true };
+        }
         if (command == "save") { SaveTabs(); return new { ok = true }; }
         if (command == "spaces") return spaces.Select(space => new
         {
