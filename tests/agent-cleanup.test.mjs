@@ -17,12 +17,12 @@ test('runner cleans up on success/error, preserves explicit continuation, and is
     res.end(JSON.stringify(body.command === 'new' ? { id: 42 } : { ok: true }));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ego-cleanup-'));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pluck-cleanup-'));
   const connection = path.join(dir, 'connection.json');
   await fs.writeFile(connection, JSON.stringify({ port: server.address().port, token: 'test' }));
   const run = (source, args = []) => new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.resolve('native/agent.mjs'), ...args], {
-      env: { ...process.env, EGO_NATIVE_CONNECTION: connection }, stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PLUCK_NATIVE_CONNECTION: connection }, stdio: ['pipe', 'pipe', 'pipe'],
     });
     child.on('error', reject);
     child.on('close', code => resolve(code));

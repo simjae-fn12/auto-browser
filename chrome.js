@@ -22,7 +22,7 @@ window.browser.onState((state) => {
   }
   const active = state.tabs.find(tab => tab.id === current);
   if (document.activeElement !== address) address.value = active?.url || '';
-  document.title = active?.title ? `${active.title} — Ego Windows` : 'Ego Windows';
+  document.title = active?.title ? `${active.title} — pluck Windows` : 'pluck Windows';
 });
 
 window.browser.onFocusAddress(() => {

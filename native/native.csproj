@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -6,8 +6,19 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>EgoWindowsNative</AssemblyName>
+    <AssemblyName>pluck</AssemblyName>
+    <Product>pluck</Product>
+    <Title>pluck</Title>
+    <ApplicationIcon>pluck.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="chrome\chrome.html" LogicalName="chrome.html" />
+    <EmbeddedResource Include="pluck.ico" LogicalName="pluck.ico" />
+    <EmbeddedResource Include="agent.mjs" LogicalName="agent.mjs" />
+    <EmbeddedResource Include="assistant\activity.js" LogicalName="activity.js" />
+    <EmbeddedResource Include="assistant\INSTRUCTIONS.md" LogicalName="assistant.md" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />

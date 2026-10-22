@@ -1,12 +1,12 @@
 {
-  "name": "ego-windows",
+  "name": "pluck-windows",
   "version": "0.1.0",
   "private": true,
   "description": "A small Windows browser shared by a person and local AI agents",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "package:win": "electron-packager . EgoWindows --platform=win32 --arch=x64 --out=dist --overwrite --ignore=^/dist$"
+    "package:win": "electron-packager . pluck --platform=win32 --arch=x64 --out=dist --overwrite --ignore=^/dist$"
   },
   "devDependencies": {
     "electron": "44.6.0",

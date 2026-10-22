@@ -8,11 +8,11 @@ const args = process.argv.slice(2);
 const keepTabs = args.includes('--keep-tabs');
 const scriptPath = args.find(arg => arg !== '--keep-tabs');
 
-const connectionPath = process.env.EGO_NATIVE_CONNECTION
-  || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'ego-windows-native', 'connection.json');
+const connectionPath = process.env.PLUCK_NATIVE_CONNECTION
+  || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'pluck-windows-native', 'connection.json');
 let connection;
 try { connection = JSON.parse(await fs.readFile(connectionPath, 'utf8')); }
-catch { throw new Error('Ego Windows Native를 먼저 실행하세요.'); }
+catch { throw new Error('pluck Windows Native를 먼저 실행하세요.'); }
 
 async function call(command, args = {}) {
   const response = await fetch(`http://127.0.0.1:${connection.port}/`, {
@@ -55,6 +55,31 @@ function scoped(space) {
 
 const browser = Object.freeze({
   listSpaces: () => call('spaces'),
+  // The tab the person is looking at. It cannot be opened or closed from here, only read and driven.
+  activeTab: async () => {
+    const tab = await call('active');
+    if (!tab.id) throw new Error('No active tab');
+    const send = (command, args = {}) => call(command, { space: tab.space, owner, ...args, id: tab.id });
+    return Object.freeze({
+      id: tab.id, title: tab.title, url: tab.url,
+      goto: (url) => send('goto', { url }),
+      snapshot: (options = {}) => send('snapshot', {
+        textLimit: options.full ? 20000 : options.textLimit,
+        elementLimit: options.full ? 250 : options.elementLimit,
+      }),
+      click: (target) => send('click', { target }),
+      fill: (target, value) => send('fill', { target, value }),
+      press: (key) => send('press', { key }),
+      scroll: (direction, pixels = 600) => send('scroll', { direction, pixels }),
+      wait: (target, timeout = 10000) => send('wait', { target, timeout }),
+      js: async (code) => (await send('js', { code })).result,
+      screenshot: async (file) => {
+        const { png } = await send('screenshot');
+        await fs.writeFile(file, Buffer.from(png, 'base64'));
+        return path.resolve(file);
+      },
+    });
+  },
   useOrCreateSpace: async (name) => {
     await call('space', { space: name });
     return scoped(name);

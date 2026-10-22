@@ -1,6 +1,6 @@
-# Ego Windows Native
+# pluck Windows Native
 
-Windows Forms와 Microsoft Edge WebView2로 만든 Windows 브라우저입니다. Electron은 사용하지 않습니다. 원본 `ego-lite`의 공식 포트가 아닌 독립 구현입니다.
+Windows Forms와 Microsoft Edge WebView2로 만든 Windows 브라우저입니다. Electron은 사용하지 않습니다.
 
 ## 빌드와 실행
 
@@ -9,7 +9,35 @@ dotnet run --project .\native.csproj
 dotnet publish .\native.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o .\publish
 ```
 
-빌드에는 .NET 10 SDK가 필요합니다. 실행 파일은 `publish\EgoWindowsNative.exe`입니다. Windows의 WebView2 런타임이 필요합니다. 모든 탭은 `%APPDATA%\ego-windows-native\profile`을 공유하므로 앱 안에서 로그인한 사이트를 에이전트 탭도 사용할 수 있습니다. 다시 시작할 때는 사람 탭의 URL만 복원됩니다.
+빌드에는 .NET 10 SDK가 필요합니다. 실행 파일은 `publish\pluck.exe`입니다. Windows의 WebView2 런타임이 필요합니다. 모든 탭은 `%APPDATA%\pluck-windows-native\profile`을 공유하므로 앱 안에서 로그인한 사이트를 에이전트 탭도 사용할 수 있습니다. 다시 시작할 때는 사람 탭의 URL만 복원됩니다.
+
+## 화면과 단축키
+
+사이드바·주소 표시·커맨드 팔레트는 `chrome/chrome.html`을 별도 WebView2로 그린 UI입니다. 실행 파일에 리소스로 포함되며, 페이지 WebView는 이 UI가 알려 주는 영역 위에 배치됩니다. 시스템 라이트/다크 테마를 따르고 창 제목 표시줄 색도 맞춥니다.
+
+| 단축키 | 동작 |
+| --- | --- |
+| `Ctrl+T` | 커맨드 팔레트로 새 탭 (검색·주소·열린 탭 전환) |
+| `Ctrl+L` | 현재 탭 주소 편집 |
+| `Ctrl+K` | 제목·주소로 열린 탭 검색 |
+| `Ctrl+W` / `Ctrl+Shift+T` | 탭 닫기 / 닫은 탭 다시 열기 |
+| `Ctrl+Tab`, `Ctrl+1`~`9` | 탭 전환 |
+| `Ctrl+Shift+S` | 사이드바 접기·펼치기 |
+| `Ctrl+R`, `F5`, `Alt+←/→` | 새로고침, 뒤로/앞으로 |
+| `Ctrl+J` | AI 패널 열기·닫기 |
+
+### AI 패널
+
+오른쪽 패널에서 Claude와 Codex에게 바로 작업을 맡길 수 있습니다. 앱이 이미 로그인된 로컬 CLI(`claude`, `codex`)를 헤드리스로 실행하므로 구독 중인 계정을 그대로 씁니다. 별도 API 키는 필요 없습니다. 두 CLI와 Node.js가 설치돼 있어야 합니다.
+
+- AI는 `%APPDATA%\pluck-windows-native\assistant\claude` 또는 `assistant\codex` 작업 폴더에서 실행되고, 여기에 놓인 `agent.mjs`로 브라우저를 조작합니다. 실행할 때 지침 파일을 갱신하고 부모 터미널·에이전트의 세션 환경 변수를 제거합니다. 기존 CLI 로그인 위치는 유지합니다.
+- "현재 탭" 칩이 켜져 있으면 보고 있는 탭 정보가 함께 전달되어 "이 페이지 요약해줘" 같은 요청이 가능합니다. 이를 위해 `browser.activeTab()` API를 추가했습니다.
+- AI가 직접 연 탭은 사이드바의 `Claude`/`Codex` 그룹에 나타납니다. 새 대화 버튼은 이전 방을 보존합니다. 상단 대화 목록에서 이전 방을 고르면 내용과 CLI 세션이 복원되어 이어서 대화할 수 있습니다. 대화는 `assistant-history.json`에 저장하며 앱을 다시 열어도 남습니다. 실행 중 새 대화를 열면 기존 작업을 중지합니다.
+- 조작 중 페이지 테두리·상태 배지, 대상 요소 강조, 가상 커서와 클릭 파동이 표시됩니다. 실제 시스템 마우스를 이동하지 않습니다. `AI가 조작하는 탭 따라보기`를 끄면 현재 보고 있는 탭을 유지합니다. 임의 `js` 명령은 작업 상태만 표시하며 구체적인 클릭 위치를 추적하지 않습니다.
+- 대화 저장은 600ms 단위로 묶어 백그라운드에서 처리하고 정상 종료 시 남은 내용을 저장합니다. 스트리밍 Markdown은 최대 초당 20회 갱신하며, 입력할 때 변경되지 않은 대화 목록과 아이콘을 다시 만들지 않습니다.
+- 권한: Claude는 작업 폴더 안 파일 편집과 `node` 명령, 웹 검색만 자동 허용됩니다. Codex는 `workspace-write` 샌드박스에 로컬 네트워크를 허용해 실행합니다.
+
+탭은 드래그로 순서를 바꿀 수 있고(재시작 후에도 유지), 가운데 클릭으로 닫을 수 있습니다. AI 작업 공간은 접을 수 있으며 에이전트가 명령을 실행 중이면 보라색 점이 표시됩니다.
 
 ## 에이전트 CLI
 
@@ -63,4 +91,4 @@ try {
 
 ## 현재 범위
 
-탭/주소창/검색/뒤로/앞으로, 프로필 공유, 에이전트 탭, 페이지 스냅샷과 iframe, 클릭/입력/대기/스크린샷/JavaScript 실행을 구현했습니다. Chrome 프로필 이전, 확장 프로그램 관리, 공식 `ego-browser` 스킬과의 호환은 아직 구현되지 않았습니다. WebView2는 Edge 렌더링 엔진을 사용합니다.
+탭/주소창/검색/뒤로/앞으로, 프로필 공유, 에이전트 탭, 페이지 스냅샷과 iframe, 클릭/입력/대기/스크린샷/JavaScript 실행을 구현했습니다. Chrome 프로필 이전, 확장 프로그램 관리, 공식 `pluck-browser` 스킬과의 호환은 아직 구현되지 않았습니다. WebView2는 Edge 렌더링 엔진을 사용합니다.

@@ -1,0 +1,32 @@
+using System.Text.Json;
+
+namespace PluckWindowsNative;
+
+public sealed partial class BrowserForm
+{
+    private bool followAssistant = true;
+    private static string ActivityLabel(string command) => command switch
+    {
+        "click" => "AI가 클릭하고 있어요",
+        "fill" => "AI가 입력하고 있어요",
+        "scroll" => "AI가 스크롤하고 있어요",
+        "goto" => "AI가 페이지를 열고 있어요",
+        "snapshot" => "AI가 페이지를 읽고 있어요",
+        "press" => "AI가 키를 누르고 있어요",
+        "wait" => "AI가 페이지를 기다리고 있어요",
+        _ => "AI가 브라우저를 조작하고 있어요"
+    };
+
+    private async Task ShowActivityAsync(BrowserTab tab, string command, string target = "", string frameId = "f0", bool done = false)
+    {
+        var label = done ? "브라우저 조작 완료" : ActivityLabel(command);
+        var script = ReadResource("activity.js") + "\nwindow.__pluckActivity(" + JsonSerializer.Serialize(label) + ","
+            + JsonSerializer.Serialize(target) + "," + (done ? "true" : "false") + ")";
+        try
+        {
+            if (frameId == "f0") await tab.View.CoreWebView2!.ExecuteScriptAsync(script);
+            else if (tab.Frames.TryGetValue(frameId, out var frame)) await frame.ExecuteScriptAsync(script);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException or ObjectDisposedException) { }
+    }
+}

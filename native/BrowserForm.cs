@@ -7,9 +7,9 @@ using System.Text.Json.Nodes;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace EgoWindowsNative;
+namespace PluckWindowsNative;
 
-public sealed class BrowserForm : Form
+public sealed partial class BrowserForm : Form
 {
     private sealed class BrowserTab(int id, string space, TabPage page, WebView2 view, string owner)
     {
@@ -21,16 +21,17 @@ public sealed class BrowserForm : Form
         public string Owner { get; } = owner;
         public DateTime LastUsed { get; set; } = DateTime.UtcNow;
         public int PendingCommands { get; set; }
+        public int Order { get; set; }
+        public bool Loading { get; set; }
         public Dictionary<string, CoreWebView2Frame> Frames { get; } = [];
     }
 
     private sealed record SavedTab(string Url, string Space);
 
     private const string Home = "https://www.google.com/";
-    private readonly string dataDir = Environment.GetEnvironmentVariable("EGO_NATIVE_DATA_DIR")
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ego-windows-native");
-    private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
-    private readonly TextBox address = new() { Dock = DockStyle.Fill, PlaceholderText = "주소 또는 검색" };
+    private readonly string dataDir = Environment.GetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR")
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "pluck-windows-native");
+    private readonly TabControl tabs = new ContentTabs { Dock = DockStyle.Fill };
     private readonly Dictionary<int, BrowserTab> browserTabs = [];
     private readonly HashSet<string> spaces = new(StringComparer.Ordinal);
     private readonly System.Windows.Forms.Timer cleanupTimer = new() { Interval = 60000 };
@@ -41,34 +42,14 @@ public sealed class BrowserForm : Form
 
     public BrowserForm()
     {
-        Text = "Ego Windows Native";
-        Width = 1200;
-        Height = 800;
-        MinimumSize = new Size(600, 400);
+        Text = "pluck";
+        Width = 1380;
+        Height = 900;
+        MinimumSize = new Size(780, 520);
         KeyPreview = true;
-
-        var bar = new TableLayoutPanel { Dock = DockStyle.Top, Height = 40, ColumnCount = 5 };
-        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
-        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
-        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
-        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
-        AddButton(bar, "←", 0, () => { if (Active()?.View.CanGoBack == true) Active()!.View.GoBack(); });
-        AddButton(bar, "→", 1, () => { if (Active()?.View.CanGoForward == true) Active()!.View.GoForward(); });
-        AddButton(bar, "↻", 2, () => Active()?.View.Reload());
-        bar.Controls.Add(address, 3, 0);
-        AddButton(bar, "+", 4, () => _ = CreateTabAsync(Home, "user", true));
-        address.KeyDown += (_, e) =>
-        {
-            if (e.KeyCode != Keys.Enter) return;
-            e.SuppressKeyPress = true;
-            var tab = Active();
-            if (tab != null) tab.View.CoreWebView2?.Navigate(NormalizeUrl(address.Text));
-            tabs.Focus();
-        };
+        BuildChrome();
+        historySaveTimer.Tick += SaveHistoryTick;
         tabs.SelectedIndexChanged += (_, _) => RefreshAddress();
-        Controls.Add(tabs);
-        Controls.Add(bar);
         KeyDown += OnShortcut;
         Shown += async (_, _) => await InitializeAsync();
         FormClosing += (_, _) => SaveTabs();
@@ -76,16 +57,12 @@ public sealed class BrowserForm : Form
         FormClosed += (_, _) =>
         {
             cleanupTimer.Dispose();
+            StopAllAssistants();
+            FlushAssistantHistory();
+            historySaveTimer.Dispose();
             listener?.Close();
             if (connectionFile != null) File.Delete(connectionFile);
         };
-    }
-
-    private static void AddButton(TableLayoutPanel bar, string label, int column, Action action)
-    {
-        var button = new Button { Text = label, Dock = DockStyle.Fill, TabStop = false };
-        button.Click += (_, _) => action();
-        bar.Controls.Add(button, column, 0);
     }
 
     private async Task InitializeAsync()
@@ -94,17 +71,20 @@ public sealed class BrowserForm : Form
         {
             Directory.CreateDirectory(dataDir);
             environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(dataDir, "profile"));
+            await InitializeChromeAsync();
             var saved = ReadSavedTabs();
             var userTabs = saved.Where(tab => tab.Space == "user").ToArray();
-            foreach (var tab in userTabs.Length == 0 ? [new SavedTab(Home, "user")] : userTabs)
-                await CreateTabAsync(tab.Url, "user", true);
+            var restored = userTabs.Length == 0 ? [new SavedTab(Home, "user")] : userTabs;
+            for (var i = 0; i < restored.Length; i++)
+                await CreateTabAsync(restored[i].Url, "user", i == 0);
+            Active()?.View.Focus();
             StartServer();
             cleanupTimer.Start();
         }
         catch (Exception ex)
         {
             File.WriteAllText(Path.Combine(dataDir, "startup-error.log"), ex.ToString());
-            MessageBox.Show(this, ex.Message, "Ego Windows Native 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, "pluck Windows Native 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -127,7 +107,7 @@ public sealed class BrowserForm : Form
     private void SaveTabs()
     {
         if (!Directory.Exists(dataDir)) return;
-        var saved = browserTabs.Values.Where(tab => !tab.Agent).Select(tab => new { url = tab.View.Source?.ToString(), space = tab.Space })
+        var saved = OrderedTabs().Where(tab => !tab.Agent).Select(tab => new { url = tab.View.Source?.ToString(), space = tab.Space })
             .Where(tab => tab.url?.StartsWith("http", StringComparison.OrdinalIgnoreCase) == true).ToArray();
         File.WriteAllText(Path.Combine(dataDir, "tabs.json"), JsonSerializer.Serialize(new { tabs = saved }));
     }
@@ -139,19 +119,24 @@ public sealed class BrowserForm : Form
             || browserTabs.Values.Count(tab => tab.Space == space) >= 20))
             throw new InvalidOperationException("Agent tab limit reached (20 per space, 60 total). Close unused tabs first.");
         var id = nextId++;
-        var page = new TabPage(space == "user" ? "새 탭" : $"◆ {space} {id}");
+        var page = new TabPage(space == "user" ? "새 탭" : $"◆ {space} {id}") { Padding = Padding.Empty, BackColor = Color.White };
         var view = new WebView2 { Dock = DockStyle.Fill };
+        view.KeyDown += OnShortcut;
         page.Controls.Add(view);
-        var tab = new BrowserTab(id, space, page, view, owner);
+        var tab = new BrowserTab(id, space, page, view, owner) { Order = nextOrder++ };
         browserTabs.Add(id, tab);
         tabs.TabPages.Add(page);
         if (select) tabs.SelectedTab = page;
+        RefreshSidebar();
         try
         {
             await view.EnsureCoreWebView2Async(environment);
             view.CoreWebView2.DocumentTitleChanged += (_, _) => UpdateTitle(tab);
             view.CoreWebView2.SourceChanged += (_, _) => { if (Active() == tab) RefreshAddress(); };
-            view.CoreWebView2.NavigationStarting += (_, _) => tab.Frames.Clear();
+            view.CoreWebView2.NavigationStarting += (_, _) => { tab.Frames.Clear(); tab.Loading = true; RefreshSidebar(); };
+            view.CoreWebView2.NavigationCompleted += (_, _) => { tab.Loading = false; if (Active() == tab) RefreshAddress(); else RefreshSidebar(); };
+            view.CoreWebView2.FaviconChanged += (_, _) => RefreshSidebar();
+            view.CoreWebView2.HistoryChanged += (_, _) => { if (Active() == tab) RefreshNavigation(); };
             view.CoreWebView2.FrameCreated += (_, e) =>
             {
                 var frameId = $"f{e.Frame.FrameId}";
@@ -184,6 +169,7 @@ public sealed class BrowserForm : Form
             tabs.TabPages.Remove(page);
             view.Dispose();
             page.Dispose();
+            RefreshSidebar();
             throw;
         }
     }
@@ -192,7 +178,8 @@ public sealed class BrowserForm : Form
     {
         var title = tab.View.CoreWebView2?.DocumentTitle;
         tab.Page.Text = (tab.Agent ? $"◆ {tab.Space} · " : "") + (string.IsNullOrWhiteSpace(title) ? "새 탭" : title.Length > 24 ? title[..24] + "…" : title);
-        if (Active() == tab) Text = $"{title} — Ego Windows Native";
+        if (Active() == tab) Text = string.IsNullOrWhiteSpace(title) ? "pluck" : $"{title} — pluck";
+        RefreshSidebar();
     }
 
     private BrowserTab? Active() => browserTabs.Values.FirstOrDefault(tab => tab.Page == tabs.SelectedTab);
@@ -200,8 +187,9 @@ public sealed class BrowserForm : Form
     private void RefreshAddress()
     {
         var tab = Active();
-        address.Text = tab?.View.Source?.ToString() ?? "";
-        Text = tab == null ? "Ego Windows Native" : $"{tab.View.CoreWebView2?.DocumentTitle} — Ego Windows Native";
+        var title = tab?.View.CoreWebView2?.DocumentTitle;
+        Text = string.IsNullOrWhiteSpace(title) ? "pluck" : $"{title} — pluck";
+        RefreshSidebar();
     }
 
     private static string NormalizeUrl(string? input)
@@ -214,23 +202,84 @@ public sealed class BrowserForm : Form
         return "https://www.google.com/search?q=" + Uri.EscapeDataString(value);
     }
 
+    // WebView2 raises KeyDown for accelerator keys pressed inside a page, so the same handler serves every surface.
     private void OnShortcut(object? sender, KeyEventArgs e)
     {
-        if (e.Control && e.KeyCode == Keys.L) { address.Focus(); address.SelectAll(); e.SuppressKeyPress = true; }
-        else if (e.Control && e.KeyCode == Keys.T) { _ = CreateTabAsync(Home, "user", true); e.SuppressKeyPress = true; }
-        else if (e.Control && e.KeyCode == Keys.W) { if (Active() is { } tab) CloseTab(tab); e.SuppressKeyPress = true; }
-        else if (e.Alt && e.KeyCode == Keys.Left) { if (Active()?.View.CanGoBack == true) Active()!.View.GoBack(); e.SuppressKeyPress = true; }
-        else if (e.Alt && e.KeyCode == Keys.Right) { if (Active()?.View.CanGoForward == true) Active()!.View.GoForward(); e.SuppressKeyPress = true; }
+        if (HandleShortcut(e.KeyData)) { e.Handled = true; e.SuppressKeyPress = true; }
+    }
+
+    private (Keys Keys, long Tick) lastShortcut;
+
+    private bool HandleShortcut(Keys keys)
+    {
+        // The chrome page forwards shortcuts itself; drop a duplicate if the WebView reported the same press too.
+        if (lastShortcut.Keys == keys && Environment.TickCount64 - lastShortcut.Tick < 80) return true;
+        lastShortcut = (keys, Environment.TickCount64);
+        var key = keys & Keys.KeyCode;
+        var ctrl = (keys & Keys.Control) != 0;
+        var shift = (keys & Keys.Shift) != 0;
+        var alt = (keys & Keys.Alt) != 0;
+        var ordered = OrderedTabs();
+        var index = Array.IndexOf(ordered, Active());
+        if (ctrl && !alt && key == Keys.T && shift) ReopenClosedTab();
+        else if (ctrl && !alt && key == Keys.T) _ = OpenPaletteAsync("new");
+        else if (ctrl && !alt && !shift && key == Keys.L) _ = OpenPaletteAsync("current");
+        else if (ctrl && !alt && !shift && key == Keys.K) _ = OpenPaletteAsync("tabs");
+        else if (ctrl && !alt && !shift && key == Keys.W) { if (Active() is { } tab) CloseTab(tab); }
+        else if (ctrl && !alt && shift && key == Keys.S) { _ = AnimateSidebarAsync(!sidebarTarget); }
+        else if (ctrl && !alt && !shift && key == Keys.J) { chromeView.Focus(); PostChrome(new { type = "assist" }); }
+        else if (ctrl && !alt && key == Keys.Tab && ordered.Length > 0)
+            ShowTab(ordered[(index + (shift ? ordered.Length - 1 : 1) + ordered.Length) % ordered.Length]);
+        else if (ctrl && !alt && !shift && key is >= Keys.D1 and <= Keys.D9)
+        {
+            var users = ordered.Where(tab => !tab.Agent).ToArray();
+            var n = key == Keys.D9 ? users.Length - 1 : key - Keys.D1;
+            if (n >= 0 && n < users.Length) ShowTab(users[n]);
+        }
+        else if ((ctrl && !alt && !shift && key == Keys.R) || (!ctrl && !alt && key == Keys.F5)) Active()?.View.Reload();
+        else if (alt && !ctrl && key == Keys.Left) GoBack();
+        else if (alt && !ctrl && key == Keys.Right) GoForward();
+        else return false;
+        return true;
+    }
+
+    // Selecting a tab on the person's behalf also gives the page keyboard focus, as other browsers do.
+    private void ShowTab(BrowserTab tab)
+    {
+        tabs.SelectedTab = tab.Page;
+        if (!paletteOpen) tab.View.Focus();
+    }
+
+    private void GoBack() { if (Active()?.View.CanGoBack == true) Active()!.View.GoBack(); }
+    private void GoForward() { if (Active()?.View.CanGoForward == true) Active()!.View.GoForward(); }
+
+    private void ReopenClosedTab()
+    {
+        if (closedTabs.TryPop(out var url)) _ = CreateTabAsync(url, "user", true);
     }
 
     private void CloseTab(BrowserTab tab)
     {
-        if (!browserTabs.Remove(tab.Id)) return;
+        if (!browserTabs.ContainsKey(tab.Id)) return;
+        if (Active() == tab)
+        {
+            // Select a neighbour from the sidebar order instead of whatever TabControl picks.
+            var ordered = OrderedTabs();
+            var index = Array.IndexOf(ordered, tab);
+            var next = ordered.Skip(index + 1).FirstOrDefault(other => other.Space == tab.Space)
+                ?? ordered.Take(index).LastOrDefault(other => other.Space == tab.Space)
+                ?? ordered.FirstOrDefault(other => other != tab && !other.Agent)
+                ?? ordered.FirstOrDefault(other => other != tab);
+            if (next != null) tabs.SelectedTab = next.Page;
+        }
+        browserTabs.Remove(tab.Id);
+        if (!tab.Agent && tab.View.Source is { } source && source.Scheme is "http" or "https") closedTabs.Push(source.ToString());
         tabs.TabPages.Remove(tab.Page);
         tab.Frames.Clear();
         tab.View.Dispose();
         tab.Page.Dispose();
         if (tab.Agent && !browserTabs.Values.Any(other => other.Space == tab.Space)) spaces.Remove(tab.Space);
+        RefreshSidebar();
         if (browserTabs.Count == 0) _ = CreateTabAsync(Home, "user", true);
     }
 
@@ -355,6 +404,15 @@ public sealed class BrowserForm : Form
                 listedTab.LastUsed = DateTime.UtcNow;
             return State(requestedSpace.Length == 0 ? null : requestedSpace);
         }
+        if (command == "active")
+        {
+            var active = Active();
+            return new
+            {
+                id = active?.Id, space = active?.Space, title = active?.View.CoreWebView2?.DocumentTitle ?? "",
+                url = active?.View.Source?.ToString() ?? ""
+            };
+        }
         if (command == "new")
         {
             if (requestedSpace == "user") throw new InvalidOperationException("User tabs cannot be created by an agent");
@@ -370,8 +428,15 @@ public sealed class BrowserForm : Form
         var core = tab.View.CoreWebView2 ?? throw new InvalidOperationException("Tab is not ready");
         tab.LastUsed = DateTime.UtcNow;
         tab.PendingCommands++;
+        RefreshSidebar();
         try
         {
+        if (command != "screenshot")
+        {
+            if (followAssistant && aiRuns.Count > 0) ShowTab(tab);
+            PostChrome(new { type = "activity", running = true, label = ActivityLabel(command) });
+            await ShowActivityAsync(tab, command, command == "press" ? ":focus" : "");
+        }
         switch (command)
         {
             case "show": tabs.SelectedTab = tab.Page; return new { id = tab.Id };
@@ -394,7 +459,15 @@ public sealed class BrowserForm : Form
             default: throw new InvalidOperationException($"Unknown command: {command}");
         }
         }
-        finally { tab.PendingCommands--; tab.LastUsed = DateTime.UtcNow; }
+        finally
+        {
+            tab.PendingCommands--; tab.LastUsed = DateTime.UtcNow; RefreshSidebar();
+            if (command != "screenshot")
+            {
+                await ShowActivityAsync(tab, command, done: true);
+                PostChrome(new { type = "activity", running = browserTabs.Values.Any(t => t.PendingCommands > 0), label = ActivityLabel(command) });
+            }
+        }
     }
 
     private static string Read(JsonElement body, string name)
@@ -455,11 +528,11 @@ public sealed class BrowserForm : Form
 
     private static readonly string SnapshotScript = """
         (() => {
-          document.querySelectorAll('[data-ego-native-ref]').forEach(el => el.removeAttribute('data-ego-native-ref'));
+          document.querySelectorAll('[data-pluck-native-ref]').forEach(el => el.removeAttribute('data-pluck-native-ref'));
           const elements = [...document.querySelectorAll('a,button,input,textarea,select,[role="button"],[contenteditable="true"]')]
             .filter(el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; })
             .slice(0, __ELEMENT_LIMIT__).map((el, i) => {
-              const ref = String(i + 1); el.setAttribute('data-ego-native-ref', ref);
+              const ref = String(i + 1); el.setAttribute('data-pluck-native-ref', ref);
               return { ref, tag: el.tagName.toLowerCase(), text: (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').trim().slice(0, 160), href: el.getAttribute('href') };
             });
           return { title: document.title, url: location.href, text: (document.body?.innerText || '').slice(0, __TEXT_LIMIT__), elements };
@@ -503,12 +576,15 @@ public sealed class BrowserForm : Form
         var match = System.Text.RegularExpressions.Regex.Match(target, "^@(?<frame>f[0-9]+):(?<ref>[0-9]+)$");
         var frameId = match.Success ? match.Groups["frame"].Value : "f0";
         var selector = match.Success ? "@" + match.Groups["ref"].Value : target;
+        await ShowActivityAsync(tab, command, selector, frameId);
+        // Only a visible click needs a brief lead-in before navigation can replace the page.
+        if (command == "click" && Active() == tab) await Task.Delay(90);
         var script = $$"""
             (() => {
               const target = {{JsonSerializer.Serialize(selector)}};
               const value = {{JsonSerializer.Serialize(value)}};
               const el = target.startsWith('@')
-                ? document.querySelector('[data-ego-native-ref="' + CSS.escape(target.slice(1)) + '"]')
+                ? document.querySelector('[data-pluck-native-ref="' + CSS.escape(target.slice(1)) + '"]')
                 : document.querySelector(target);
               if (!el) throw new Error('Element not found. Take a new snapshot.');
               el.scrollIntoView({ block: 'center' });
@@ -526,6 +602,7 @@ public sealed class BrowserForm : Form
         var result = frameId == "f0"
             ? await tab.View.CoreWebView2!.ExecuteScriptAsync(script)
             : await (tab.Frames.GetValueOrDefault(frameId) ?? throw new InvalidOperationException("Frame changed. Take a new snapshot.")).ExecuteScriptAsync(script);
+        await ShowActivityAsync(tab, command, selector, frameId, done: true);
         if (result == "null") throw new InvalidOperationException("Action failed or frame changed. Take a new snapshot.");
         return result == "true";
     }

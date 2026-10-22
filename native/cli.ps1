@@ -5,8 +5,8 @@ param(
     [Parameter(Position=3)][string]$Arg3
 )
 
-$connectionPath = Join-Path $env:APPDATA 'ego-windows-native\connection.json'
-if (-not (Test-Path -LiteralPath $connectionPath)) { throw 'Ego Windows Native를 먼저 실행하세요.' }
+$connectionPath = Join-Path $env:APPDATA 'pluck-windows-native\connection.json'
+if (-not (Test-Path -LiteralPath $connectionPath)) { throw 'pluck Windows Native를 먼저 실행하세요.' }
 $connection = Get-Content -LiteralPath $connectionPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $body = @{ command = $Command }
 switch ($Command) {
