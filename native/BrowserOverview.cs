@@ -47,14 +47,9 @@ public sealed partial class BrowserForm
 
     private Conversation? RunningConversation(string space, out string? engine)
     {
-        foreach (var candidate in Engines)
-            if (aiRuns.ContainsKey(candidate) && currentConversations.GetValueOrDefault(candidate) is { } chat && SpaceOf(chat) == space)
-            {
-                engine = candidate;
-                return chat;
-            }
-        engine = null;
-        return null;
+        var chat = aiRuns.Values.Select(run => run.Chat).FirstOrDefault(chat => SpaceOf(chat) == space);
+        engine = chat?.Engine;
+        return chat;
     }
 
     private async Task<object[]> OverviewCardsAsync()
@@ -65,7 +60,8 @@ public sealed partial class BrowserForm
             entries.Add((mine, thumb => new
             {
                 space = "user", label = "내 탭", kind = "user", engine = "", tabs = browserTabs.Values.Count(tab => !tab.Agent),
-                title = TabTitle(mine), current = Active()?.Agent == false, running = false, status = "", interrupted = false, stopped = false, thumb
+                title = TabTitle(mine), current = Active()?.Agent == false, running = false, status = "", interrupted = false, stopped = false,
+                recording = IsRecording("user"), thumb
             }));
         var recent = DateTime.UtcNow.AddSeconds(-45);
         foreach (var session in sessions.Values.OrderBy(session => session.Order).ToArray())
@@ -75,7 +71,7 @@ public sealed partial class BrowserForm
             var run = RunningConversation(session.Id, out var engine);
             var busy = own.Any(tab => tab.PendingCommands > 0);
             var running = !session.Stopped && (run != null || busy || (session.Kind != "panel" && session.LastSeen > recent));
-            if (own.Length == 0 && !running) continue;
+            if (own.Length == 0 && !running && !IsRecording(session.Id)) continue;
             // The tab the agent is working in, else its latest tab, else a tab of the person's it was allowed to drive.
             var shown = own.FirstOrDefault(tab => tab.PendingCommands > 0) ?? own.MaxBy(tab => tab.LastUsed)
                 ?? session.UserTabs.Select(id => browserTabs.GetValueOrDefault(id)).LastOrDefault(tab => tab != null);
@@ -85,7 +81,7 @@ public sealed partial class BrowserForm
                 engine = engine ?? chat?.Engine ?? "", tabs = own.Length,
                 title = shown == null ? "" : TabTitle(shown), current = Active() is { } active && own.Contains(active),
                 running, status = session.Stopped ? "중지됨" : busy ? session.Activity : running ? (run != null ? "AI가 생각하고 있어요" : "터미널에서 작업 중") : "",
-                interrupted = run == null && chat?.Interrupted == true, stopped = session.Stopped, thumb
+                interrupted = run == null && chat?.Interrupted == true, stopped = session.Stopped, recording = IsRecording(session.Id), thumb
             }));
         }
         // Captures run side by side and the overview waits a bounded time; slower ones land in the cache for the next refresh.
@@ -127,11 +123,11 @@ public sealed partial class BrowserForm
     }
 
     // CapturePreviewAsync can stall for many seconds on a tab that has been hidden a while; the DevTools capture does not.
-    private static async Task<byte[]?> CaptureHiddenAsync(CoreWebView2 core)
+    private static async Task<byte[]?> CaptureHiddenAsync(CoreWebView2 core, int quality = 85)
     {
         try
         {
-            var json = await core.CallDevToolsProtocolMethodAsync("Page.captureScreenshot", """{"format":"jpeg","quality":85}""");
+            var json = await core.CallDevToolsProtocolMethodAsync("Page.captureScreenshot", $$"""{"format":"jpeg","quality":{{quality}}}""");
             using var result = JsonDocument.Parse(json);
             return Convert.FromBase64String(result.RootElement.GetProperty("data").GetString() ?? "");
         }
@@ -175,7 +171,7 @@ public sealed partial class BrowserForm
 
     private void StopSession(string space)
     {
-        if (RunningConversation(space, out var engine) != null) StopAssistant(engine!);
+        if (RunningConversation(space, out _) is { } chat) StopAssistant(chat);
         else if (sessions.GetValueOrDefault(space) is { Kind: not "panel" } session) session.Stopped = true;
         _ = RefreshOverviewAsync();
     }

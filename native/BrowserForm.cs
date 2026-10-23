@@ -87,6 +87,7 @@ public sealed partial class BrowserForm : Form
         FormClosed += (_, _) =>
         {
             cleanupTimer.Dispose();
+            StopAllRecordings();
             StopAllAssistants();
             FlushAssistantHistory();
             historySaveTimer.Dispose();
@@ -532,13 +533,19 @@ public sealed partial class BrowserForm : Form
         var followed = followAssistant && session.Id == FollowedSpace();
         tab.LastUsed = DateTime.UtcNow;
         tab.PendingCommands++;
-        if (command != "screenshot") session.Activity = ActivityLabel(command);
         RefreshSidebar();
         try
         {
         if (command != "screenshot")
         {
-            if (followed && !userTab) ShowTab(tab);
+            session.Activity = ActivityLabel(command);
+            await RecordActionAsync(session.Id, command, tab, Read(body, "target"),
+                command switch { "goto" => Read(body, "url"), "press" => Read(body, "key"), "scroll" => Read(body, "direction"), _ => Read(body, "value") });
+        }
+        if (command != "screenshot")
+        {
+            // Following moves the view only; focus stays wherever the person is typing, such as the AI panel.
+            if (followed && !userTab && tabs.SelectedTab != tab.Page) tabs.SelectedTab = tab.Page;
             if (followed) PostChrome(new { type = "activity", running = true, label = ActivityLabel(command) });
             await ShowActivityAsync(tab, command, command == "press" ? ":focus" : "");
         }
@@ -568,6 +575,7 @@ public sealed partial class BrowserForm : Form
         {
             tab.PendingCommands--; tab.LastUsed = DateTime.UtcNow; RefreshSidebar();
             ScheduleThumbnail(tab);
+            if (recordings.TryGetValue(session.Id, out var recording)) _ = CaptureRecordingFrameAsync(recording);
             if (command != "screenshot")
             {
                 await ShowActivityAsync(tab, command, done: true);

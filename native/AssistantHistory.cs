@@ -18,6 +18,11 @@ public sealed partial class BrowserForm
         public string? BrowserRuntime { get; set; }
         // Browser session holding this conversation's tabs; a handoff keeps the source's session.
         public string? Space { get; set; }
+        // CLI options; empty means the CLI's own default. Mode is restricted (default), plan, readonly or full.
+        public string? Model { get; set; }
+        public string? Effort { get; set; }
+        public string? Mode { get; set; }
+        public string? Cwd { get; set; }
         public List<QueuedPrompt> Pending { get; set; } = [];
         public List<JsonObject> Events { get; set; } = [];
     }
@@ -50,15 +55,20 @@ public sealed partial class BrowserForm
             var chat = conversations.LastOrDefault(c => c.Engine == engine && c.Selected)
                 ?? conversations.LastOrDefault(c => c.Engine == engine) ?? NewConversation(engine);
             currentConversations[engine] = chat;
-            if (chat.Session != null) aiSessions[engine] = chat.Session;
             PostConversation(engine);
         }
     }
 
     private Conversation NewConversation(string engine)
     {
+        // A new conversation starts with the options of the one the person was using, except full access.
+        var template = currentConversations.GetValueOrDefault(engine);
         foreach (var previous in conversations.Where(c => c.Engine == engine)) previous.Selected = false;
-        var chat = new Conversation { Engine = engine, Selected = true };
+        var chat = new Conversation
+        {
+            Engine = engine, Selected = true, Model = template?.Model, Effort = template?.Effort,
+            Mode = template?.Mode == "full" ? null : template?.Mode, Cwd = template?.Cwd
+        };
         conversations.Add(chat);
         return chat;
     }
@@ -71,6 +81,7 @@ public sealed partial class BrowserForm
     private Conversation[] HistorySnapshot() => conversations.Select(c => new Conversation
     { Id = c.Id, Engine = c.Engine, Title = c.Title, Session = c.Session, NeedsContext = c.NeedsContext,
         Running = c.Running, Interrupted = c.Interrupted, Selected = c.Selected, BrowserRuntime = c.BrowserRuntime, Space = c.Space,
+        Model = c.Model, Effort = c.Effort, Mode = c.Mode, Cwd = c.Cwd,
         Pending = c.Pending.ToList(), Events = c.Events.ToList() }).ToArray();
 
     private static string SpaceOf(Conversation chat) => chat.Space ??= chat.Id;
@@ -111,43 +122,42 @@ public sealed partial class BrowserForm
     private void PostConversationList(string engine) => PostChrome(new
     {
         type = "ai.history", engine, selected = currentConversations[engine].Id,
-        chats = conversations.Where(c => c.Engine == engine).Reverse().Select(c => new { id = c.Id, title = c.Title }).ToArray()
+        chats = conversations.Where(c => c.Engine == engine).Reverse()
+            .Select(c => new { id = c.Id, title = c.Title, running = aiRuns.ContainsKey(c.Id) }).ToArray()
     });
 
     private void PostConversation(string engine)
     {
         PostQueue(engine);
         PostConversationList(engine);
+        PostSettings(engine);
         PostChrome(new { type = "ai.restore", engine, events = currentConversations[engine].Events, interrupted = currentConversations[engine].Interrupted });
+        PostAssistantStatus();
     }
 
+    // Switching conversations only changes what the panel shows; runs in other conversations keep going.
     private void SelectConversation(string engine, string? id = null)
     {
         if (!Engines.Contains(engine)) return;
         LoadAssistantHistory();
         var chat = id == null ? NewConversation(engine) : conversations.FirstOrDefault(c => c.Engine == engine && c.Id == id);
         if (chat == null) return;
-        StopAssistant(engine);
         pendingImages[engine].Clear();
         PostImages(engine);
         currentConversations[engine] = chat;
         foreach (var previous in conversations.Where(c => c.Engine == engine)) previous.Selected = previous == chat;
-        aiSessions.Remove(engine);
-        if (chat.Session != null) aiSessions[engine] = chat.Session;
         SaveAssistantHistory();
         PostConversation(engine);
     }
 
-    private void RecordAssistant(string engine, object data)
+    private void RecordAssistant(Conversation chat, JsonObject entry)
     {
-        if (!currentConversations.TryGetValue(engine, out var chat)) return;
-        var entry = JsonSerializer.SerializeToNode(data)!.AsObject();
         chat.Events.Add(entry);
         if (entry["kind"]?.ToString() == "user" && chat.Title == "새 대화")
         {
             chat.Title = string.IsNullOrWhiteSpace(entry["text"]?.ToString()) ? "사진을 첨부한 대화" : Clip(entry["text"]?.ToString(), 48);
             if (sessions.ContainsKey(SpaceOf(chat))) OpenSession(SpaceOf(chat), SessionTitle(chat));
-            PostConversationList(engine);
+            if (currentConversations.GetValueOrDefault(chat.Engine) == chat) PostConversationList(chat.Engine);
         }
         // Batch disk work off the UI thread, including partial replies during long runs.
         SaveAssistantHistory();

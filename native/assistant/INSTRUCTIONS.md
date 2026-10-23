@@ -6,11 +6,13 @@ Messages may start with an `[pluck]` line describing the tab the person is curre
 
 ## Controlling the browser
 
-Drive the browser only through the automation runner `agent.mjs` in this folder. Write a script file in this folder and run it:
+Drive the browser only through the automation runner `{{AGENT}}`. Write each browser script into `{{SCRIPTS}}` (this conversation's own script folder, so concurrent conversations never overwrite each other) and run it:
+
+    node "{{AGENT}}" --keep-tabs "{{SCRIPTS}}\step1.mjs"
 
 Run commands only in your own headless workspace. Never attach to, send input to, close, or reconfigure the person's existing terminals, shells, or other agent sessions. Do not use desktop keyboard/mouse automation for browsing. Use the browser's click/fill/scroll/press methods so actions are visible in its live overlay; reserve `js` for operations those methods cannot express.
 
-    node agent.mjs --keep-tabs step1.mjs
+The person may send more messages while you work; they arrive in the middle of your turn. Read each one and adjust the task in progress instead of finishing the old plan first.
 
 On Windows, use the PowerShell tool when Bash is unavailable. The node runner works in either shell; installing Git Bash is not required.
 

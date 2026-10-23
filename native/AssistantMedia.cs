@@ -72,24 +72,18 @@ public sealed partial class BrowserForm
     {
         if (!Engines.Contains(sourceEngine) || !Engines.Contains(targetEngine) || sourceEngine == targetEngine) return;
         LoadAssistantHistory();
-        if (aiRuns.ContainsKey(targetEngine))
-        {
-            PostChrome(new { type = "ai.imageError", engine = targetEngine, text = "현재 작업을 중지한 뒤 대화를 이어받아 주세요." });
-            return;
-        }
         var source = conversations.FirstOrDefault(c => c.Engine == sourceEngine && c.Id == sourceId);
         if (source == null) return;
-        if (currentConversations[sourceEngine] == source) StopAssistant(sourceEngine);
+        StopAssistant(source);
         var chat = NewConversation(targetEngine);
         chat.Title = source.Title;
         chat.Space = SpaceOf(source);
         chat.NeedsContext = true;
         chat.Events = source.Events.Select(e => e.DeepClone().AsObject()).ToList();
         currentConversations[targetEngine] = chat;
-        aiSessions.Remove(targetEngine);
         pendingImages[targetEngine].Clear();
         PostImages(targetEngine);
-        RecordAssistant(targetEngine, new { kind = "note", text = $"{sourceEngine} 대화를 이어받았습니다. 이전 답변과 사진을 참고해 계속 대화할 수 있습니다." });
+        RecordAssistant(chat, new JsonObject { ["kind"] = "note", ["text"] = $"{sourceEngine} 대화를 이어받았습니다. 이전 답변과 사진을 참고해 계속 대화할 수 있습니다." });
         SaveAssistantHistory();
         PostConversation(targetEngine);
         PostChrome(new { type = "ai.handoffReady", engine = targetEngine });

@@ -56,6 +56,7 @@ public sealed partial class BrowserForm
         settings.IsGeneralAutofillEnabled = false;
         settings.IsPasswordAutosaveEnabled = false;
         core.WebMessageReceived += (_, e) => HandleChromeMessage(e.WebMessageAsJson);
+        ServeRecordings(core);
         core.NavigationStarting += (_, e) => { if (!e.Uri.StartsWith("data:", StringComparison.Ordinal)) e.Cancel = true; };
         core.NewWindowRequested += (_, e) => e.Handled = true;
         using var stream = typeof(BrowserForm).Assembly.GetManifestResourceStream("chrome.html")
@@ -75,11 +76,13 @@ public sealed partial class BrowserForm
             case "ready": chromeReady = true; RefreshSidebar(); PostAssistantStatus(); LoadAssistantHistory(); break;
             case "ai.send": SubmitAssistant(Read(message, "engine"), Read(message, "text"), Read(message, "context") == "True"); break;
             case "ai.queueRemove": RemoveQueuedPrompt(Read(message, "engine"), Read(message, "id")); break;
-            case "ai.queueRun": RunNextPrompt(Read(message, "engine")); break;
+            case "ai.queueRun": if (currentConversations.GetValueOrDefault(Read(message, "engine")) is { } queued) RunNextPrompt(queued); break;
+            case "ai.setting": UpdateSetting(Read(message, "engine"), Read(message, "name"), Read(message, "value")); break;
+            case "ai.pickFolder": PickFolder(Read(message, "engine")); break;
             case "ai.attach": AddImage(Read(message, "engine"), Read(message, "name"), Read(message, "data"), Read(message, "preview")); break;
             case "ai.removeImage": RemoveImage(Read(message, "engine"), Read(message, "id")); break;
             case "ai.handoff": HandoffConversation(Read(message, "source"), Read(message, "id"), Read(message, "engine")); break;
-            case "ai.stop": StopAssistant(Read(message, "engine")); break;
+            case "ai.stop": if (currentConversations.GetValueOrDefault(Read(message, "engine")) is { } stopping) StopAssistant(stopping); break;
             case "ai.reset": SelectConversation(Read(message, "engine")); break;
             case "ai.select": SelectConversation(Read(message, "engine"), Read(message, "id")); break;
             case "ai.follow": followAssistant = Read(message, "enabled") == "True"; break;
@@ -134,6 +137,21 @@ public sealed partial class BrowserForm
             case "overview.open": OpenSessionTab(Read(message, "space")); break;
             case "overview.stop": StopSession(Read(message, "space")); break;
             case "overview.takeover": StopSession(Read(message, "space")); OpenSessionTab(Read(message, "space")); break;
+            case "rec.toggle":
+                // From the AI panel the session is the conversation on screen; from the overview it is named directly.
+                if (currentConversations.GetValueOrDefault(Read(message, "engine")) is { } recorded)
+                {
+                    OpenSession(SpaceOf(recorded), SessionTitle(recorded), "panel").Kind = "panel";
+                    ToggleRecording(SpaceOf(recorded));
+                }
+                else ToggleRecording(Read(message, "space"));
+                break;
+            case "rec.list": PostRecordingList(); break;
+            case "rec.open": PostRecording(Read(message, "id")); break;
+            case "rec.delete": DeleteRecording(Read(message, "id")); break;
+            case "rec.export.begin": BeginExport(Read(message, "title")); break;
+            case "rec.export.chunk": ExportChunk(Read(message, "data")); break;
+            case "rec.export.end": EndExport(); break;
             case "frozen":
                 viewport.Visible = false;
                 chromeView.Focus();
@@ -169,6 +187,7 @@ public sealed partial class BrowserForm
             url = active?.View.Source?.ToString() ?? "",
             loading = active?.Loading == true,
             collapsed = sidebarCollapsed,
+            recording = recordings.Keys.ToArray(),
             tabs = OrderedTabs().Select(tab => new
             {
                 id = tab.Id, space = tab.Space, label = tab.Agent ? SessionLabel(tab.Space) : "", agent = tab.Agent,
