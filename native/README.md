@@ -58,7 +58,13 @@ AI 패널 위쪽의 녹화 버튼(그 대화의 세션)이나 개요 카드의 *
 - **슬래시 명령:** 입력창에서 `/`를 치면 `/new`, `/stop`, `/model`, `/effort`, `/mode`, `/folder`, `/compact` 메뉴가 나옵니다. 앞의 여섯 개는 패널이 처리하고, `/compact`와 목록에 없는 명령(스킬, 사용자 명령)은 CLI에 그대로 보냅니다.
 - "현재 탭" 칩이 켜져 있으면 보고 있는 탭 정보가 함께 전달되어 "이 페이지 요약해줘" 같은 요청이 가능합니다. 이를 위해 `browser.activeTab()` API를 추가했습니다.
 - 대화마다 브라우저 세션이 따로 있습니다. AI가 직접 연 탭은 사이드바에서 `Claude · 대화 제목` 그룹에 나타나고, 다른 대화나 터미널 에이전트는 이 탭을 보거나 조작할 수 없습니다. 이어받은 대화는 원래 대화의 세션을 그대로 씁니다. 새 대화 버튼은 이전 방을 보존합니다. 상단 대화 목록에서 이전 방을 고르면 내용과 CLI 세션이 복원되어 이어서 대화할 수 있습니다. 대화는 `assistant-history.json`에 저장하며 앱을 다시 열어도 남습니다. 실행 중에 새 대화를 열거나 다른 대화로 바꿔도 기존 작업은 계속됩니다.
-- 조작 중 페이지 테두리·상태 배지, 대상 요소 강조, 가상 커서와 클릭 파동이 표시됩니다. 실제 시스템 마우스를 이동하지 않습니다. `AI가 조작하는 탭 따라보기`는 AI 패널이 열려 있고 그 패널에 보이는 대화에만 적용됩니다. 다른 대화나 터미널 에이전트는 보고 있는 탭을 바꾸지 않습니다. 끄면 항상 현재 탭을 유지합니다. 임의 `js` 명령은 작업 상태만 표시하며 구체적인 클릭 위치를 추적하지 않습니다.
+- AI가 조작하는 동안 페이지 위에 다음이 표시됩니다. 실제 시스템 마우스는 움직이지 않습니다.
+  - 화면 가장자리를 천천히 도는 오로라 테두리
+  - 씨앗 마크와 반짝이는 문구가 있는 상태 알약. 작업이 끝나면 체크 표시와 민트색으로 바뀝니다.
+  - 대상 요소로 모여드는 모서리 괄호와 동작 칩(클릭·입력·선택 등). 입력 중에는 깜빡이는 커서가 함께 나옵니다.
+  - 살짝 넘치게 미끄러지는 pluck 커서와 클릭할 때의 이중 파동
+  - 페이지를 읽을 때 위에서 아래로 한 번 지나가는 스캔 빛
+  AI 패널에도 같은 씨앗 마크가 쓰입니다. 작업 상태 줄은 120ms 늦게 나타나 깜빡임을 막고, 문구가 반짝입니다. 실행 중인 도구 줄에는 빛이 지나가고, 브라우저 도구 줄에는 레일이 빛납니다. 대기 중에는 세 가지 색 점이 물결칩니다. 모든 동작은 `docs/ego-motion-reference.md` §3의 pluck 모션 값(시간 4단계, `--ease`·`--ease-lift`·`--ease-pop`)을 쓰고, 동작 줄이기 설정을 켜면 움직임 없이 투명도만 바뀝니다. `AI가 조작하는 탭 따라보기`는 AI 패널이 열려 있고 그 패널에 보이는 대화에만 적용됩니다. 다른 대화나 터미널 에이전트는 보고 있는 탭을 바꾸지 않습니다. 끄면 항상 현재 탭을 유지합니다. 임의 `js` 명령은 작업 상태만 표시하며 구체적인 클릭 위치를 추적하지 않습니다.
 - 대화 저장은 600ms 단위로 묶어 백그라운드에서 처리하고 정상 종료 시 남은 내용을 저장합니다. 스트리밍 Markdown은 최대 초당 20회 갱신하며, 입력할 때 변경되지 않은 대화 목록과 아이콘을 다시 만들지 않습니다.
 - 입력창의 사진 버튼, 붙여넣기, 드래그로 PNG/JPEG/GIF/WebP를 첨부할 수 있습니다. 한 번에 6장, 장당 5MB까지 지원하며 사진만 보내는 것도 가능합니다. 원본은 앱 데이터의 `assistant/images`에 복사하고 대화에는 미리보기를 저장합니다. Claude에는 이미지 콘텐츠 블록을, Codex에는 `--image` 인수를 전달합니다.
 - 엔진을 바꾸면 `이 대화 이어받기`가 표시됩니다. 선택하면 실행 중이던 원래 작업을 중지하고, 메시지·미완성 답변·사진을 복사한 새 대화를 대상 엔진에 만듭니다. 기존 두 엔진의 방은 보존됩니다. 이어받은 뒤 요청을 입력하면 최근 대화와 사진을 전달하며, 전체 대화·도구 결과는 작업 폴더의 기록 파일에서 읽을 수 있습니다. 다른 엔진의 내부 세션이나 숨겨진 추론을 공유하는 기능은 아닙니다.
@@ -90,7 +96,56 @@ $env:PLUCK_SESSION = 's1a2b3c4d5e6'
 .\cli.ps1 scroll 2 down 600
 .\cli.ps1 show 2
 .\cli.ps1 screenshot 2 .\tab.png
+.\cli.ps1 snapshot 2 diff                       # 이전 스냅샷 이후 바뀐 요소만
+.\cli.ps1 hover 2 'text=메뉴'
+.\cli.ps1 type 2 '추가 입력'
+.\cli.ps1 select 2 '#size' 'L'
+.\cli.ps1 press 2 'Control+A'
+.\cli.ps1 clickAt 2 320 180
+.\cli.ps1 back 2
+.\cli.ps1 screenshot 2 .\marked.png annotate     # 참조 번호 상자를 그려서 캡처
 ```
+
+### 입력 방식 (신뢰 이벤트)
+
+클릭·입력·키 입력은 DevTools `Input` 도메인으로 보냅니다. 그래서 페이지에서 `event.isTrusted`가 `true`인 실제 입력으로 보이고, 사람이 누른 것과 똑같이 처리됩니다. 리치 에디터(블로그·문서 편집기)나 스크립트로 만든 이벤트를 거부하는 사이트에서도 동작합니다.
+
+- `click`: 대상을 화면 가운데로 스크롤하고 마우스를 옮긴 뒤 클릭합니다. 마우스가 움직이면서 호버 메뉴가 닫히고 레이아웃이 바뀔 수 있으므로, 클릭 직전에 위치를 다시 잽니다. 다음 경우에는 `el.focus(); el.click()`으로 대신합니다.
+  - 대상이 다른 요소에 가려져 있을 때
+  - 대상이 다른 출처의 iframe 안에 있을 때
+  - 실제 클릭이 대상에 닿지 않았을 때
+  결과의 `input` 값(`trusted` 또는 `script`)으로 어느 방식이었는지 알 수 있습니다.
+- `fill`: 대상에 포커스를 주고 내용을 전체 선택한 뒤 `Input.insertText`로 바꿉니다. contenteditable 편집기에서도 됩니다. 입력 후 값이 기대와 다르면 예전 방식(value setter + input/change 이벤트)으로 대신합니다.
+- `type`은 기존 내용을 지우지 않고 현재 포커스 위치에 이어서 입력합니다.
+- `press`는 이름 있는 키, F1~F12, 한 글자를 받고 `Control`/`Shift`/`Alt`/`Meta`와 조합할 수 있습니다.
+- `scroll`은 화면 가운데에서 마우스 휠을 굴리므로 페이지 안쪽의 스크롤 영역도 움직입니다. 문서가 움직이지 않으면 `window.scrollBy`로 대신합니다.
+- 대상은 스냅샷 참조(`@f0:3`), `text=보이는 이름`, CSS 선택자로 지정할 수 있습니다. `wait`에 `text=문구`를 주면 페이지에 그 글자가 나타날 때까지 기다립니다.
+
+### 스냅샷
+
+요소마다 다음 정보가 붙습니다.
+- `role`: link, button, textbox, checkbox, combobox 등
+- `text`: 접근성 이름. aria-label, aria-labelledby, label, 글자, alt, title, placeholder 순으로 찾은 첫 값입니다.
+- `value`: 입력값. 비밀번호는 가립니다.
+- `state`: checked, disabled, expanded, selected, required, focused
+- `offscreen`: 화면 밖에 있는 요소에만 붙습니다.
+
+화면에 보이는 요소가 먼저 나옵니다. h1~h3 목차(`headings`)와 스크롤 위치·문서 높이(`scroll`)도 함께 돌려줍니다.
+
+`{ diff: true }`는 같은 탭·같은 주소에서 찍은 이전 스냅샷과 비교해 바뀐 요소만 돌려줍니다. 본문이 그대로면 `text`는 `null`입니다. 참조 번호는 스냅샷마다 새로 매겨지므로, 비교는 요소의 역할·이름·값·상태로 하고 포커스 변화는 무시합니다. 동작 후 결과를 확인할 때 쓰면 토큰을 크게 줄일 수 있습니다.
+
+### MCP 서버
+
+`mcp.mjs`는 별도 패키지 없이 동작하는 stdio MCP 서버입니다. pluck을 켤 때마다 `%APPDATA%\pluck-windows-native\mcp.mjs`에 최신본을 써 두므로, 이 경로를 MCP 클라이언트에 등록하면 됩니다. pluck은 다른 에이전트의 설정 파일을 직접 고치지 않습니다.
+
+```powershell
+claude mcp add pluck -- node "$env:APPDATA\pluck-windows-native\mcp.mjs"
+codex mcp add pluck -- node "$env:APPDATA\pluck-windows-native\mcp.mjs"
+```
+
+MCP 서버 프로세스 하나가 세션 하나입니다. 사이드바에는 `MCP`라는 이름으로 나오고, `PLUCK_SESSION_LABEL`로 이름을 바꿀 수 있습니다. 서버가 종료되면 그 세션이 연 탭을 닫습니다.
+
+제공하는 도구는 `tabs`, `open`, `active_tab`, `goto`, `snapshot`, `click`, `click_at`, `hover`, `fill`, `type`, `select`, `press`, `scroll`, `back`, `forward`, `wait`, `screenshot`, `js`, `show`, `close`입니다. `screenshot`은 PNG 이미지로 돌려주고 `annotate` 옵션을 지원합니다.
 
 `snapshot`의 참조 번호는 페이지나 프레임이 바뀌면 새로 받아야 합니다. CSS 선택자도 지원합니다. 제어 API는 `127.0.0.1`에만 열리고 연결 토큰은 사용자 프로필에 저장됩니다.
 기본 스냅샷은 본문 4,000자와 조작 요소 80개로 제한합니다. 전체 내용이 필요하면 `browser.snapshot(id, { full: true })` 또는 `.\cli.ps1 snapshot 2 full`을 사용하세요.
@@ -111,7 +166,7 @@ try {
 '@ | node .\agent.mjs
 ```
 
-`node .\agent.mjs .\my-task.mjs`처럼 파일로 전달할 수도 있습니다. 먼저 `browser.session('작업 이름')`으로 세션을 엽니다. 반환된 `task`에는 `id`, `list`, `open`, `show`, `goto`, `snapshot`, `click`, `fill`, `press`, `scroll`, `wait`, `js`, `screenshot`, `close`가 있습니다. 세션을 지정하지 않으면 실행마다 새 세션이 발급됩니다. `--keep-tabs`로 실행하면 발급된 세션 ID를 표준 오류에 출력하므로, 다음 실행에 `node .\agent.mjs --session <id> --keep-tabs .\step2.mjs`처럼 넘기면 같은 탭을 이어서 씁니다. `PLUCK_SESSION` 환경 변수로도 지정할 수 있고, AI 패널은 대화의 세션을 이 변수로 전달합니다. 예전 `browser.useOrCreateSpace(name)`은 `browser.session(name)`과 같습니다. Node.js는 이 자동화 스크립트 실행에만 사용하며 브라우저 앱 자체에는 필요하지 않습니다.
+`node .\agent.mjs .\my-task.mjs`처럼 파일로 전달할 수도 있습니다. 먼저 `browser.session('작업 이름')`으로 세션을 엽니다. 반환된 `task`에는 `id`, `list`, `open`, `show`, `goto`, `snapshot`, `click`, `clickAt`, `hover`, `fill`, `type`, `select`, `press`, `scroll`, `back`, `forward`, `wait`, `js`, `screenshot`, `close`가 있습니다. 세션을 지정하지 않으면 실행마다 새 세션이 발급됩니다. `--keep-tabs`로 실행하면 발급된 세션 ID를 표준 오류에 출력하므로, 다음 실행에 `node .\agent.mjs --session <id> --keep-tabs .\step2.mjs`처럼 넘기면 같은 탭을 이어서 씁니다. `PLUCK_SESSION` 환경 변수로도 지정할 수 있고, AI 패널은 대화의 세션을 이 변수로 전달합니다. 예전 `browser.useOrCreateSpace(name)`은 `browser.session(name)`과 같습니다. Node.js는 이 자동화 스크립트 실행에만 사용하며 브라우저 앱 자체에는 필요하지 않습니다.
 
 ### 자동 탭 정리
 
@@ -132,4 +187,12 @@ AI 응답 중에 보낸 메시지는 진행 중인 작업에 바로 반영됩니
 
 AI 실행 상태와 선택한 대화를 저장합니다. 실행 도중 앱이 종료되면 다음 실행에서 해당 대화에 **중단된 작업 이어가기** 버튼이 나타납니다. 이어갈 때 현재 탭과 사이트의 임시저장 상태를 먼저 확인하도록 안내합니다. 실행 중인 AI가 있으면 자동화 API의 `shutdown`은 거절하며, 사용자가 창을 닫을 때는 확인합니다. 사용자 탭 중 마지막으로 보고 있던 탭도 복원합니다. 사이트에 저장되지 않은 편집 내용이나 실행 중인 프로세스 자체를 복구하지는 않습니다.
 
-탭/주소창/검색/뒤로/앞으로, 프로필 공유, 에이전트 탭, 페이지 스냅샷과 iframe, 클릭/입력/대기/스크린샷/JavaScript 실행을 구현했습니다. Chrome 프로필 이전, 확장 프로그램 관리, 공식 `pluck-browser` 스킬과의 호환은 아직 구현되지 않았습니다. WebView2는 Edge 렌더링 엔진을 사용합니다.
+구현한 기능은 다음과 같습니다.
+
+- 탭, 주소창, 검색, 뒤로/앞으로
+- 프로필 공유와 에이전트 탭
+- iframe을 포함한 접근성 스냅샷(diff 지원)
+- 실제 입력 이벤트로 하는 클릭·입력·키·호버·휠
+- 좌표 클릭과 번호 표시 스크린샷
+- 대기와 JavaScript 실행
+- MCP 서버 Chrome 프로필 이전, 확장 프로그램 관리, 공식 `pluck-browser` 스킬과의 호환은 아직 구현되지 않았습니다. WebView2는 Edge 렌더링 엔진을 사용합니다.

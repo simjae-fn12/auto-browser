@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>itest</title>
+<style>#pane{height:120px;overflow:auto;border:1px solid}#pane div{height:1000px}#menu{display:none}#hov:hover+#menu,#menu:hover{display:block}</style>
+<h1>Input test</h1>
+<button id="b" onclick="log('click',event.isTrusted)">Press me</button>
+<form id="f" onsubmit="event.preventDefault();log('submit',true)"><input id="i" placeholder="name" aria-label="Your name"
+ oninput="log('input',event.isTrusted)"><button>Go</button></form>
+<div id="ed" contenteditable="true" style="border:1px solid;min-height:20px"></div>
+<select id="s"><option value="a">Apple</option><option value="b">Banana</option></select>
+<span id="hov" onmouseover="log('hover',event.isTrusted)">Hover here</span><a id="menu" href="#x">Hidden item</a>
+<input id="k" onkeydown="log('key:'+event.key+(event.ctrlKey?'+ctrl':''),event.isTrusted)">
+<div id="pane"><div>scroll me</div></div>
+<iframe id="fr" src="frame.html" style="width:300px;height:80px"></iframe>
+<div style="height:1500px"></div>
+<script>window.__log=[];function log(k,t){__log.push(k+':'+t)}
+document.getElementById('i').addEventListener('click',()=>{});</script>

@@ -20,7 +20,7 @@ public sealed partial class BrowserForm
         public DateTime? Ended { get; set; }
         public List<JsonObject> Frames { get; } = [];
         public List<JsonObject> Events { get; } = [];
-        public System.Windows.Forms.Timer Timer { get; } = new() { Interval = 700 };
+        public System.Windows.Forms.Timer Timer { get; } = new() { Interval = 250 };
         public bool Capturing { get; set; }
         public string? LastHash { get; set; }
         public long Bytes { get; set; }
@@ -78,7 +78,7 @@ public sealed partial class BrowserForm
         {
             _ = CaptureRecordingFrameAsync(recording);
             // Keep the saved timeline current, so a crash loses at most a few seconds.
-            if (++recording.Ticks % 7 == 0) SaveRecording(recording);
+            if (++recording.Ticks % 20 == 0) SaveRecording(recording);
         };
         recordings[space] = recording;
         recording.Events.Add(new JsonObject { ["t"] = 0, ["kind"] = "note", ["text"] = "녹화를 시작했습니다." });
@@ -86,18 +86,20 @@ public sealed partial class BrowserForm
         _ = CaptureRecordingFrameAsync(recording);
     }
 
-    private void StopRecording(Recording recording)
+    // Stopping turns the frames into an MP4 right away; on shutdown that is skipped and the player can make it later.
+    private void StopRecording(Recording recording, bool encode = true)
     {
         recording.Timer.Stop();
         recording.Timer.Dispose();
         recording.Ended = DateTime.UtcNow;
         recordings.Remove(recording.Space);
         SaveRecording(recording);
+        if (encode && recording.Frames.Count > 0) _ = EncodeAndPostAsync(recording.Id, reveal: false);
     }
 
     private void StopAllRecordings()
     {
-        foreach (var recording in recordings.Values.ToArray()) StopRecording(recording);
+        foreach (var recording in recordings.Values.ToArray()) StopRecording(recording, encode: false);
     }
 
     private void SaveRecording(Recording recording)
@@ -239,7 +241,9 @@ public sealed partial class BrowserForm
                             ["duration"] = data["duration"]?.DeepClone(), ["bytes"] = data["bytes"]?.DeepClone(),
                             ["frames"] = frames.Count, ["steps"] = (data["events"]?.AsArray() ?? []).Count(item => item?["kind"]?.ToString() == "action"),
                             ["cover"] = frames.Count > 0 ? frames[frames.Count / 2]?["file"]?.ToString() : null,
-                            ["live"] = recordings.Values.Any(active => active.Id == data["id"]?.ToString())
+                            ["live"] = recordings.Values.Any(active => active.Id == data["id"]?.ToString()),
+                            ["video"] = data["video"]?.ToString() is { } video && File.Exists(video) ? video : null,
+                            ["encoding"] = encodingRecordings.Contains(data["id"]?.ToString() ?? "")
                         });
                     }
                     catch (Exception ex) when (ex is IOException or JsonException) { }
@@ -272,7 +276,7 @@ public sealed partial class BrowserForm
         exportStream = null;
         using var dialog = new SaveFileDialog
         {
-            Filter = "WebM 동영상|*.webm", FileName = string.Concat((title.Length == 0 ? "pluck 녹화" : title).Split(Path.GetInvalidFileNameChars())) + ".webm"
+            Filter = "WebM 동영상|*.webm", InitialDirectory = RecordingVideosDir, FileName = string.Concat((title.Length == 0 ? "pluck 녹화" : title).Split(Path.GetInvalidFileNameChars())) + ".webm"
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {

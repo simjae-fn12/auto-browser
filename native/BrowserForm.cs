@@ -29,6 +29,12 @@ public sealed partial class BrowserForm : Form
         public Task<string?>? ThumbCapture { get; set; }
         public DateTime ThumbStarted { get; set; }
         public bool ThumbDue { get; set; }
+        // Dialogs answered on the agent's behalf since its last snapshot, so it learns what an alert said.
+        public List<string> Dialogs { get; } = [];
+        // What the last snapshot showed, so a diff snapshot can return only what changed.
+        public HashSet<string>? LastSnapshotKeys { get; set; }
+        public int LastSnapshotText { get; set; }
+        public string LastSnapshotUrl { get; set; } = "";
     }
 
     // One AI panel conversation or one terminal agent. Its tabs are invisible to every other session.
@@ -53,6 +59,12 @@ public sealed partial class BrowserForm : Form
     private static readonly System.Text.RegularExpressions.Regex SessionIdPattern = new("^[A-Za-z0-9_-]{6,64}$");
     private readonly string dataDir = Environment.GetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR")
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "pluck-windows-native");
+    // What the person opens themselves (exported videos, AI output) lives in Documentspluck; profile, history
+    // and raw recording frames stay in dataDir because they hold login state and everything that was on screen.
+    private static readonly string userFilesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "pluck");
+    private static string RecordingVideosDir => Path.Combine(userFilesDir, "녹화");
+    private static string AiWorkDir => Path.Combine(userFilesDir, "AI 작업");
+    private static string ScreenshotsDir => Path.Combine(userFilesDir, "스크린샷");
     private readonly TabControl tabs = new ContentTabs { Dock = DockStyle.Fill };
     private readonly Dictionary<int, BrowserTab> browserTabs = [];
     private readonly Dictionary<string, AgentSession> sessions = new(StringComparer.Ordinal);
@@ -101,6 +113,8 @@ public sealed partial class BrowserForm : Form
         try
         {
             Directory.CreateDirectory(dataDir);
+            try { foreach (var dir in new[] { RecordingVideosDir, AiWorkDir, ScreenshotsDir }) Directory.CreateDirectory(dir); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(dataDir, "profile"));
             await InitializeChromeAsync();
             foreach (var (id, label, kind) in ReadSavedSessions()) RestoreSession(id, label, kind);
@@ -241,6 +255,10 @@ public sealed partial class BrowserForm : Form
                 finally { deferral.Complete(); }
             };
             view.CoreWebView2.WindowCloseRequested += (_, _) => CloseTab(tab);
+            // A native "leave site?" or alert box blocks the page until someone clicks it, and agents cannot click it.
+            // Built-in dialogs are off everywhere; agent work accepts them, the person still gets a real prompt.
+            view.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = false;
+            view.CoreWebView2.ScriptDialogOpening += (_, e) => AnswerDialog(tab, e);
             if (navigate) view.CoreWebView2.Navigate(NormalizeUrl(url));
             return tab;
         }
@@ -401,6 +419,8 @@ public sealed partial class BrowserForm : Form
         listener.Start();
         connectionFile = Path.Combine(dataDir, "connection.json");
         File.WriteAllText(connectionFile, JsonSerializer.Serialize(new { port, token }));
+        // A fixed path for MCP clients to register; refreshed every start so it matches this build's API.
+        try { File.WriteAllText(Path.Combine(dataDir, "mcp.mjs"), ReadResource("mcp.mjs")); } catch (IOException) { }
         _ = ServeAsync(listener, token);
     }
 
@@ -555,19 +575,32 @@ public sealed partial class BrowserForm : Form
             case "goto": return new { url = await NavigateAsync(core, NormalizeUrl(Read(body, "url"))) };
             case "snapshot": return await SnapshotAsync(tab,
                 int.TryParse(Read(body, "textLimit"), out var textLimit) ? Math.Clamp(textLimit, 100, 20000) : 4000,
-                int.TryParse(Read(body, "elementLimit"), out var elementLimit) ? Math.Clamp(elementLimit, 10, 250) : 80);
+                int.TryParse(Read(body, "elementLimit"), out var elementLimit) ? Math.Clamp(elementLimit, 10, 250) : 80,
+                Flag(body, "diff"));
             case "click":
-            case "fill": return new { ok = await ActAsync(tab, command, Read(body, "target"), Read(body, "value")) };
-            case "press": return new { ok = await PressAsync(core, Read(body, "key")) };
-            case "scroll": return new { ok = await ScrollAsync(core, Read(body, "direction"), Read(body, "pixels")) };
+            case "fill":
+            case "hover":
+            case "select": return await ActAsync(tab, command, Read(body, "target"), Read(body, "value"));
+            case "clickAt":
+                if (!double.TryParse(Read(body, "x"), System.Globalization.CultureInfo.InvariantCulture, out var atX)
+                    || !double.TryParse(Read(body, "y"), System.Globalization.CultureInfo.InvariantCulture, out var atY))
+                    throw new InvalidOperationException("x and y required (CSS pixels from the viewport's top-left)");
+                await MouseClickAsync(core, atX, atY, Flag(body, "double") ? 2 : 1);
+                return new { ok = true };
+            case "type":
+                await CdpAsync(core, "Input.insertText", new { text = Read(body, "value") });
+                return new { ok = true };
+            case "press": await PressKeyAsync(core, Read(body, "key")); return new { ok = true };
+            case "scroll": return new { ok = await WheelAsync(core, Read(body, "direction"), Read(body, "pixels")) };
+            case "back":
+            case "forward":
+                if (command == "back" ? !core.CanGoBack : !core.CanGoForward) throw new InvalidOperationException($"Cannot go {command}");
+                if (command == "back") core.GoBack(); else core.GoForward();
+                await Task.Delay(400);
+                return new { url = core.Source };
             case "wait": return new { ok = await WaitAsync(tab, Read(body, "target"), int.TryParse(Read(body, "timeout"), out var ms) ? ms : 10000) };
             case "js": return new { result = JsonNode.Parse(await core.ExecuteScriptAsync(Read(body, "code"))) };
-            case "screenshot":
-                using (var image = new MemoryStream())
-                {
-                    await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
-                    return new { png = Convert.ToBase64String(image.ToArray()) };
-                }
+            case "screenshot": return new { png = await CaptureAsync(core, Flag(body, "annotate")) };
             default: throw new InvalidOperationException($"Unknown command: {command}");
         }
         }
@@ -584,6 +617,67 @@ public sealed partial class BrowserForm : Form
             }
         }
     }
+
+    private void AnswerDialog(BrowserTab tab, CoreWebView2ScriptDialogOpeningEventArgs e)
+    {
+        if (tab.Agent || tab.PendingCommands > 0)
+        {
+            if (e.Kind == CoreWebView2ScriptDialogKind.Prompt) e.ResultText = e.DefaultText;
+            e.Accept();
+            if (tab.Dialogs.Count < 20)
+                tab.Dialogs.Add(e.Kind == CoreWebView2ScriptDialogKind.Beforeunload ? "beforeunload: left the page without saving" : $"{e.Kind.ToString().ToLowerInvariant()}: {e.Message}");
+            return;
+        }
+        // Modal UI inside a WebView2 event re-enters the control, so answer after the event returns.
+        var deferral = e.GetDeferral();
+        BeginInvoke(() =>
+        {
+            try { AskPerson(e); }
+            finally { deferral.Complete(); }
+        });
+    }
+
+    private void AskPerson(CoreWebView2ScriptDialogOpeningEventArgs e)
+    {
+        var title = Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) ? uri.Host : "pluck";
+        switch (e.Kind)
+        {
+            case CoreWebView2ScriptDialogKind.Alert:
+                MessageBox.Show(this, e.Message, title, MessageBoxButtons.OK);
+                e.Accept();
+                break;
+            case CoreWebView2ScriptDialogKind.Confirm:
+                if (MessageBox.Show(this, e.Message, title, MessageBoxButtons.OKCancel) == DialogResult.OK) e.Accept();
+                break;
+            case CoreWebView2ScriptDialogKind.Beforeunload:
+                if (MessageBox.Show(this, "변경한 내용이 저장되지 않을 수 있습니다.", "사이트에서 나갈까요?", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) == DialogResult.OK) e.Accept();
+                break;
+            case CoreWebView2ScriptDialogKind.Prompt:
+                if (PromptText(title, e.Message, e.DefaultText) is { } text) { e.ResultText = text; e.Accept(); }
+                break;
+        }
+    }
+
+    private string? PromptText(string title, string message, string value)
+    {
+        using var form = new Form { Text = title, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false, ClientSize = new Size(380, 130) };
+        var label = new Label { Text = message, AutoEllipsis = true, Bounds = new Rectangle(12, 12, 356, 36) };
+        var input = new TextBox { Text = value, Bounds = new Rectangle(12, 52, 356, 24) };
+        var ok = new Button { Text = "확인", DialogResult = DialogResult.OK, Bounds = new Rectangle(212, 92, 75, 26) };
+        var cancel = new Button { Text = "취소", DialogResult = DialogResult.Cancel, Bounds = new Rectangle(293, 92, 75, 26) };
+        form.Controls.AddRange([label, input, ok, cancel]);
+        form.AcceptButton = ok; form.CancelButton = cancel;
+        return form.ShowDialog(this) == DialogResult.OK ? input.Text : null;
+    }
+
+    private static string[] DrainDialogs(BrowserTab tab)
+    {
+        var dialogs = tab.Dialogs.ToArray();
+        tab.Dialogs.Clear();
+        return dialogs;
+    }
+
+    private static bool Flag(JsonElement body, string name) => Read(body, name).Equals("true", StringComparison.OrdinalIgnoreCase);
 
     private static string Read(JsonElement body, string name)
     {
@@ -606,55 +700,67 @@ public sealed partial class BrowserForm : Form
         finally { core.NavigationCompleted -= OnDone; }
     }
 
-    private static async Task<bool> PressAsync(CoreWebView2 core, string key)
-    {
-        if (key is not ("Enter" or "Tab" or "Escape" or "Backspace" or "ArrowUp" or "ArrowDown" or "ArrowLeft" or "ArrowRight"))
-            throw new InvalidOperationException("Unsupported key");
-        var script = $$"""
-            (() => {
-              const key = {{JsonSerializer.Serialize(key)}};
-              const el = document.activeElement;
-              if (!el) return false;
-              const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
-              el.dispatchEvent(event);
-              if (!event.defaultPrevented && key === 'Enter') {
-                if (el.form) el.form.requestSubmit();
-                else if (el.tagName === 'A' || el.tagName === 'BUTTON') el.click();
-              }
-              if (!event.defaultPrevented && key === 'Tab') {
-                const focusable = [...document.querySelectorAll('a[href],button,input,textarea,select,[tabindex]:not([tabindex="-1"])')];
-                focusable[(focusable.indexOf(el) + 1) % focusable.length]?.focus();
-              }
-              el.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
-              return true;
-            })()
-            """;
-        return await core.ExecuteScriptAsync(script) == "true";
-    }
-
-    private static async Task<bool> ScrollAsync(CoreWebView2 core, string direction, string pixelsText)
-    {
-        if (direction is not ("up" or "down")) throw new InvalidOperationException("Direction must be up or down");
-        var pixels = int.TryParse(pixelsText, out var parsed) ? Math.Clamp(parsed, 1, 10000) : 600;
-        var deltaY = direction == "down" ? pixels : -pixels;
-        var result = await core.ExecuteScriptAsync($"(() => {{ window.scrollBy(0, {deltaY}); return window.scrollY; }})()");
-        return result != "null";
-    }
-
+    // Interactive elements with their accessible role, name and state, visible ones first, plus a heading outline.
     private static readonly string SnapshotScript = """
         (() => {
           document.querySelectorAll('[data-pluck-native-ref]').forEach(el => el.removeAttribute('data-pluck-native-ref'));
-          const elements = [...document.querySelectorAll('a,button,input,textarea,select,[role="button"],[contenteditable="true"]')]
-            .filter(el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; })
-            .slice(0, __ELEMENT_LIMIT__).map((el, i) => {
-              const ref = String(i + 1); el.setAttribute('data-pluck-native-ref', ref);
-              return { ref, tag: el.tagName.toLowerCase(), text: (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').trim().slice(0, 160), href: el.getAttribute('href') };
-            });
-          return { title: document.title, url: location.href, text: (document.body?.innerText || '').slice(0, __TEXT_LIMIT__), elements };
+          const selector = 'a[href],button,input:not([type=hidden]),textarea,select,summary,[contenteditable=""],[contenteditable="true"],'
+            + '[role=button],[role=link],[role=checkbox],[role=radio],[role=switch],[role=tab],[role=menuitem],[role=menuitemcheckbox],'
+            + '[role=option],[role=combobox],[role=textbox],[role=searchbox],[role=slider],[role=treeitem],[onclick],[tabindex]:not([tabindex="-1"])';
+          const shown = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+          const inView = el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth; };
+          const clean = t => (t || '').replace(/\s+/g, ' ').trim();
+          const role = el => {
+            const explicit = el.getAttribute('role'); if (explicit) return explicit;
+            const tag = el.tagName.toLowerCase(), type = (el.getAttribute('type') || 'text').toLowerCase();
+            if (tag === 'a') return 'link';
+            if (tag === 'button' || tag === 'summary') return 'button';
+            if (tag === 'select') return el.multiple ? 'listbox' : 'combobox';
+            if (tag === 'textarea' || el.isContentEditable) return 'textbox';
+            if (tag === 'input') return { checkbox: 'checkbox', radio: 'radio', range: 'slider', search: 'searchbox', submit: 'button', button: 'button', reset: 'button', image: 'button', file: 'button' }[type] || 'textbox';
+            return 'generic';
+          };
+          const name = el => {
+            const labelled = el.getAttribute('aria-labelledby');
+            const byIds = labelled ? clean(labelled.split(/\s+/).map(id => document.getElementById(id)?.innerText).join(' ')) : '';
+            return clean(el.getAttribute('aria-label')) || byIds || clean([...(el.labels || [])].map(l => l.innerText).join(' '))
+              || clean(el.innerText) || clean(el.querySelector?.('img[alt]')?.getAttribute('alt')) || clean(el.getAttribute('title'))
+              || clean(el.getAttribute('placeholder')) || (el.type === 'submit' || el.type === 'button' ? clean(el.value) : '');
+          };
+          const state = el => {
+            const s = [];
+            if (el.checked || el.getAttribute('aria-checked') === 'true') s.push('checked');
+            if (el.disabled || el.getAttribute('aria-disabled') === 'true') s.push('disabled');
+            const expanded = el.getAttribute('aria-expanded'); if (expanded) s.push(expanded === 'true' ? 'expanded' : 'collapsed');
+            if (el.getAttribute('aria-selected') === 'true') s.push('selected');
+            if (el.required) s.push('required');
+            if (document.activeElement === el) s.push('focused');
+            return s.join(' ');
+          };
+          const value = el => {
+            if (el.tagName === 'SELECT') return clean(el.selectedOptions?.[0]?.text);
+            if (!('value' in el) || el.tagName === 'BUTTON' || ['checkbox', 'radio', 'submit', 'button', 'reset', 'image', 'file'].includes(el.type)) return '';
+            return el.type === 'password' ? (el.value ? '••••' : '') : String(el.value).slice(0, 160);
+          };
+          // A focusable span inside a button is the same control; keep the outermost.
+          const all = [...document.querySelectorAll(selector)].filter(shown)
+            .filter(el => !el.parentElement?.closest(selector) || el.matches('a[href],button,input,textarea,select'));
+          const ordered = [...all.filter(inView), ...all.filter(el => !inView(el))].slice(0, __ELEMENT_LIMIT__);
+          const elements = ordered.map((el, i) => {
+            const ref = String(i + 1); el.setAttribute('data-pluck-native-ref', ref);
+            const item = { ref, tag: el.tagName.toLowerCase(), role: role(el), text: name(el).slice(0, 160), href: el.getAttribute('href') };
+            const v = value(el); if (v) item.value = v;
+            const s = state(el); if (s) item.state = s;
+            if (!inView(el)) item.offscreen = true;
+            return item;
+          });
+          const headings = [...document.querySelectorAll('h1,h2,h3')].filter(shown).slice(0, 30).map(h => h.tagName[1] + ' ' + clean(h.innerText).slice(0, 120));
+          return { title: document.title, url: location.href, text: (document.body?.innerText || '').slice(0, __TEXT_LIMIT__), elements, headings,
+            scroll: { y: Math.round(scrollY), height: document.documentElement.scrollHeight, viewport: innerHeight } };
         })()
         """;
 
-    private async Task<object> SnapshotAsync(BrowserTab tab, int textLimit, int elementLimit)
+    private async Task<object> SnapshotAsync(BrowserTab tab, int textLimit, int elementLimit, bool diff)
     {
         var script = SnapshotScript.Replace("__ELEMENT_LIMIT__", elementLimit.ToString())
             .Replace("__TEXT_LIMIT__", textLimit.ToString());
@@ -670,67 +776,76 @@ public sealed partial class BrowserForm : Form
             }
             catch { tab.Frames.Remove(id); }
         }
+        var url = main?["url"]?.GetValue<string>() ?? "";
         var combinedText = string.Join("\n", results.Select(r => $"[{r.Frame}] {r.Data["text"]}"));
+        var text = combinedText[..Math.Min(textLimit, combinedText.Length)];
+        var elements = results.SelectMany(r => (r.Data["elements"]?.AsArray() ?? []).Select(e =>
+        {
+            var item = e!.DeepClone().AsObject();
+            item["ref"] = $"@{r.Frame}:{e["ref"]}";
+            return item;
+        })).Take(elementLimit).ToArray();
+        // Refs are renumbered on every snapshot, so changes are tracked by what an element is, not by its ref.
+        // Focus moves with every action, so it is left out or each diff would report the previously focused control.
+        static string Key(JsonObject e) => string.Join("|", e["ref"]!.GetValue<string>().Split(':')[0], e["role"], e["text"], e["href"], e["value"],
+            e["state"]?.GetValue<string>().Replace("focused", "").Trim());
+        var keys = elements.Select(Key).ToHashSet();
+        var textHash = text.GetHashCode();
+        var previous = diff && tab.LastSnapshotUrl == url ? tab.LastSnapshotKeys : null;
+        var textUnchanged = previous != null && tab.LastSnapshotText == textHash;
+        var changed = previous == null ? elements : elements.Where(e => !previous.Contains(Key(e))).ToArray();
+        var removed = previous?.Count(k => !keys.Contains(k)) ?? 0;
+        tab.LastSnapshotKeys = keys;
+        tab.LastSnapshotText = textHash;
+        tab.LastSnapshotUrl = url;
         return new
         {
             title = main?["title"]?.GetValue<string>() ?? "",
-            url = main?["url"]?.GetValue<string>() ?? "",
-            text = combinedText[..Math.Min(textLimit, combinedText.Length)],
-            elements = results.SelectMany(r => (r.Data["elements"]?.AsArray() ?? []).Select(e => new
-            {
-                @ref = $"@{r.Frame}:{e?["ref"]}", tag = e?["tag"]?.GetValue<string>(),
-                text = e?["text"]?.GetValue<string>(), href = e?["href"]?.GetValue<string>()
-            })).Take(elementLimit).ToArray(),
-            frames = results.Select(r => new { frame = r.Frame, url = r.Data["url"]?.GetValue<string>() }).ToArray()
+            url,
+            text = textUnchanged ? null : text,
+            elements = changed,
+            diff = previous == null ? null : new { textUnchanged, unchanged = elements.Length - changed.Length, removed },
+            headings = main?["headings"]?.DeepClone(),
+            scroll = main?["scroll"]?.DeepClone(),
+            frames = results.Select(r => new { frame = r.Frame, url = r.Data["url"]?.GetValue<string>() }).ToArray(),
+            dialogs = DrainDialogs(tab)
         };
     }
 
-    private async Task<bool> ActAsync(BrowserTab tab, string command, string target, string value)
+    private async Task<object> ActAsync(BrowserTab tab, string command, string target, string value)
     {
         if (target.Length == 0) throw new InvalidOperationException("Target required");
-        var match = System.Text.RegularExpressions.Regex.Match(target, "^@(?<frame>f[0-9]+):(?<ref>[0-9]+)$");
-        var frameId = match.Success ? match.Groups["frame"].Value : "f0";
-        var selector = match.Success ? "@" + match.Groups["ref"].Value : target;
+        var frameId = FrameIdOf(target);
+        var selector = SelectorOf(target);
         await ShowActivityAsync(tab, command, selector, frameId);
         // Only a visible click needs a brief lead-in before navigation can replace the page.
         if (command == "click" && Active() == tab) await Task.Delay(90);
-        var script = $$"""
-            (() => {
-              const target = {{JsonSerializer.Serialize(selector)}};
-              const value = {{JsonSerializer.Serialize(value)}};
-              const el = target.startsWith('@')
-                ? document.querySelector('[data-pluck-native-ref="' + CSS.escape(target.slice(1)) + '"]')
-                : document.querySelector(target);
-              if (!el) throw new Error('Element not found. Take a new snapshot.');
-              el.scrollIntoView({ block: 'center' });
-              if ({{JsonSerializer.Serialize(command)}} === 'click') { el.click(); return true; }
-              if (!('value' in el)) throw new Error('Element cannot be filled');
-              el.focus();
-              const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-              const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-              if (setter) setter.call(el, value); else el.value = value;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              return true;
-            })()
-            """;
-        var result = frameId == "f0"
-            ? await tab.View.CoreWebView2!.ExecuteScriptAsync(script)
-            : await (tab.Frames.GetValueOrDefault(frameId) ?? throw new InvalidOperationException("Frame changed. Take a new snapshot.")).ExecuteScriptAsync(script);
-        await ShowActivityAsync(tab, command, selector, frameId, done: true);
-        if (result == "null") throw new InvalidOperationException("Action failed or frame changed. Take a new snapshot.");
-        return result == "true";
+        try
+        {
+            // input tells the agent whether the page saw trusted events or the script fallback.
+            switch (command)
+            {
+                case "click": return new { ok = true, input = await ClickAsync(tab, target) };
+                case "fill": return new { ok = true, input = await FillAsync(tab, target, value) };
+                case "hover": await HoverAsync(tab, target); return new { ok = true };
+                default: return new { ok = true, selected = await SelectOptionAsync(tab, target, value) };
+            }
+        }
+        finally { await ShowActivityAsync(tab, command, selector, frameId, done: true); }
     }
 
     private static async Task<bool> WaitAsync(BrowserTab tab, string selector, int timeout)
     {
-        if (selector.Length == 0) throw new InvalidOperationException("CSS selector required");
+        if (selector.Length == 0) throw new InvalidOperationException("CSS selector or text=... required");
         var deadline = DateTime.UtcNow.AddMilliseconds(Math.Clamp(timeout, 100, 30000));
         do
         {
             try
             {
-                if (await tab.View.CoreWebView2!.ExecuteScriptAsync($"Boolean(document.querySelector({JsonSerializer.Serialize(selector)}))") == "true") return true;
+                var probe = selector.StartsWith("text=")
+                    ? $"(document.body?.innerText || '').toLowerCase().includes({JsonSerializer.Serialize(selector[5..].Trim().ToLowerInvariant())})"
+                    : $"Boolean(document.querySelector({JsonSerializer.Serialize(selector)}))";
+                if (await tab.View.CoreWebView2!.ExecuteScriptAsync(probe) == "true") return true;
             }
             catch (InvalidOperationException) { /* Navigation in progress */ }
             await Task.Delay(200);

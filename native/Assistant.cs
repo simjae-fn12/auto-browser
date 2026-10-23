@@ -13,7 +13,7 @@ public sealed partial class BrowserForm
 {
     private static readonly string[] Engines = ["claude", "codex"];
     // acceptEdits already covers file edits inside the working folders, so only these extra tools are opened.
-    private const string RestrictedClaudeTools = "Bash(node:*),PowerShell(node *),Read,WebSearch,WebFetch,TodoWrite";
+    private const string RestrictedClaudeTools = "Bash(node:*),PowerShell(node *),Read,WebSearch,WebFetch,TodoWrite,Skill";
 
     private sealed class AssistantRun(Conversation chat, Process process)
     {
@@ -37,11 +37,31 @@ public sealed partial class BrowserForm
         File.WriteAllText(Path.Combine(workspace, "agent.mjs"), ReadResource("agent.mjs"));
         // Instructions now travel as a system prompt, so stale copies from older versions must not load as project files.
         foreach (var stale in new[] { "CLAUDE.md", "AGENTS.md" }) File.Delete(Path.Combine(workspace, stale));
+        InstallSkills(workspace);
         return workspace;
     }
 
+    // Bundled skills live only in pluck's own folders (never the person's chosen project or ~/.claude), so they
+    // serve the AI panel without touching the person's other Claude setups. Rewritten when the app ships new text.
+    private static void InstallSkills(string folder)
+    {
+        foreach (var name in typeof(BrowserForm).Assembly.GetManifestResourceNames().Where(name => name.StartsWith("skills/", StringComparison.Ordinal)))
+        {
+            try
+            {
+                var target = Path.Combine(folder, ".claude", "skills", name["skills/".Length..].Replace('\\', '/'));
+                var text = ReadResource(name);
+                if (File.Exists(target) && File.ReadAllText(target) == text) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.WriteAllText(target, text);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
     private static string AssistantInstructions(string agent, string scripts) =>
-        ReadResource("assistant.md").Replace("{{AGENT}}", agent).Replace("{{SCRIPTS}}", scripts);
+        ReadResource("assistant.md").Replace("{{AGENT}}", agent).Replace("{{SCRIPTS}}", scripts).Replace("{{SCREENSHOTS}}", ScreenshotsDir)
+            .Replace("{{SKILLS}}", Path.Combine(Path.GetDirectoryName(agent)!, ".claude", "skills"));
 
     private static string ReadResource(string name)
     {
@@ -57,7 +77,8 @@ public sealed partial class BrowserForm
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries)
             .Append(Path.Combine(home, ".local", "bin"))
-            .Append(Path.Combine(local, "Programs", "OpenAI", "Codex", "bin"));
+            .Append(Path.Combine(local, "Programs", "OpenAI", "Codex", "bin"))
+            .Append(Path.Combine(local, "Microsoft", "WinGet", "Links"));
         foreach (var dir in dirs)
         {
             try
@@ -142,6 +163,13 @@ public sealed partial class BrowserForm
             PostAssistantStatus();
             return;
         }
+        var cwd = chat.Cwd is { Length: > 0 } folder && Directory.Exists(folder) ? folder
+            : Directory.Exists(AiWorkDir) ? AiWorkDir : workspace;
+        // Claude keeps sessions per folder, so a session started elsewhere (including the old default) continues from its transcript.
+        if (chat.Engine == "claude" && chat.Session != null && !string.Equals(chat.SessionCwd ?? workspace, cwd, StringComparison.OrdinalIgnoreCase))
+        { chat.Session = null; chat.NeedsContext = true; }
+        chat.SessionCwd = cwd;
+        if (cwd == AiWorkDir) InstallSkills(AiWorkDir);
         if (chat.NeedsContext && !command) prompt = HandoffContext(chat, scripts) + prompt;
         var space = SpaceOf(chat);
         var browserSession = OpenSession(space, SessionTitle(chat), "panel");
@@ -153,7 +181,6 @@ public sealed partial class BrowserForm
             prompt += "\n\n[Attached images, in order]\n" + string.Join("\n", images.Select(image => image.Name + ": " + ImagePath(image)));
         PostAssistant(chat, new { kind = "user", text, images = attachments });
 
-        var cwd = chat.Cwd is { Length: > 0 } folder && Directory.Exists(folder) ? folder : workspace;
         var info = new ProcessStartInfo(exe)
         {
             WorkingDirectory = cwd,

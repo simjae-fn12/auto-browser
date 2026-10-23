@@ -17,12 +17,18 @@ switch ($Command) {
     'list' { }
     'save' { }
     'show' { $body.id = [int]$Arg1 }
-    'snapshot' { $body.id = [int]$Arg1; if ($Arg2 -eq 'full') { $body.textLimit = 20000; $body.elementLimit = 250 } }
+    'snapshot' { $body.id = [int]$Arg1; if ($Arg2 -eq 'full') { $body.textLimit = 20000; $body.elementLimit = 250 }; if ($Arg2 -eq 'diff') { $body.diff = $true } }
     'close' { $body.id = [int]$Arg1 }
-    'screenshot' { $body.id = [int]$Arg1 }
+    'screenshot' { $body.id = [int]$Arg1; if ($Arg3 -eq 'annotate') { $body.annotate = $true } }
     'goto' { $body.id = [int]$Arg1; $body.url = $Arg2 }
     'click' { $body.id = [int]$Arg1; $body.target = $Arg2 }
     'fill' { $body.id = [int]$Arg1; $body.target = $Arg2; $body.value = $Arg3 }
+    'hover' { $body.id = [int]$Arg1; $body.target = $Arg2 }
+    'type' { $body.id = [int]$Arg1; $body.value = $Arg2 }
+    'select' { $body.id = [int]$Arg1; $body.target = $Arg2; $body.value = $Arg3 }
+    'clickAt' { $body.id = [int]$Arg1; $body.x = [double]$Arg2; $body.y = [double]$Arg3 }
+    'back' { $body.id = [int]$Arg1 }
+    'forward' { $body.id = [int]$Arg1 }
     'press' { $body.id = [int]$Arg1; $body.key = $Arg2 }
     'scroll' { $body.id = [int]$Arg1; $body.direction = $Arg2; $body.pixels = [int]$Arg3 }
     'wait' { $body.id = [int]$Arg1; $body.target = $Arg2; $body.timeout = [int]$Arg3 }

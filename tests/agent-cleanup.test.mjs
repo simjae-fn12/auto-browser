@@ -30,22 +30,24 @@ test('runner cleans up on success/error, preserves explicit continuation, and is
     child.stdout.resume();
     child.stderr.resume();
   });
+  // Each run ends with cleanup-run, then release to tell the overview the session stopped working.
+  const lastAction = () => calls.filter(c => c.command !== 'release').at(-1);
   const source = "const task = await browser.useOrCreateSpace('test'); await task.open('http://localhost/');";
   try {
     assert.equal(await run(source), 0);
     const first = calls.find(c => c.command === 'new').owner;
-    assert.equal(calls.at(-1).command, 'cleanup-run');
-    assert.equal(calls.at(-1).owner, first);
+    assert.equal(lastAction().command, 'cleanup-run');
+    assert.equal(lastAction().owner, first);
     calls.length = 0;
     assert.notEqual(await run(source + "throw new Error('expected');"), 0);
-    assert.equal(calls.at(-1).command, 'cleanup-run');
-    assert.notEqual(calls.at(-1).owner, first);
+    assert.equal(lastAction().command, 'cleanup-run');
+    assert.notEqual(lastAction().owner, first);
     calls.length = 0;
     assert.equal(await run(source, ['--keep-tabs']), 0);
     assert.equal(calls.some(c => c.command === 'cleanup-run'), false);
     calls.length = 0;
     assert.notEqual(await run(source + "throw new Error('expected');", ['--keep-tabs']), 0);
-    assert.equal(calls.at(-1).command, 'cleanup-run');
+    assert.equal(lastAction().command, 'cleanup-run');
   } finally {
     await new Promise(resolve => server.close(resolve));
     await fs.rm(dir, { recursive: true, force: true });

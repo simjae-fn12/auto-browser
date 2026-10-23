@@ -16,8 +16,10 @@
     <EmbeddedResource Include="chrome\chrome.html" LogicalName="chrome.html" />
     <EmbeddedResource Include="pluck.ico" LogicalName="pluck.ico" />
     <EmbeddedResource Include="agent.mjs" LogicalName="agent.mjs" />
+    <EmbeddedResource Include="mcp.mjs" LogicalName="mcp.mjs" />
     <EmbeddedResource Include="assistant\activity.js" LogicalName="activity.js" />
     <EmbeddedResource Include="assistant\INSTRUCTIONS.md" LogicalName="assistant.md" />
+    <EmbeddedResource Include="skills\**\SKILL.md" LogicalName="skills/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

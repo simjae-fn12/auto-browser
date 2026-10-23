@@ -148,6 +148,7 @@ public sealed partial class BrowserForm
                 break;
             case "rec.list": PostRecordingList(); break;
             case "rec.open": PostRecording(Read(message, "id")); break;
+            case "rec.video": _ = EncodeAndPostAsync(Read(message, "id"), reveal: true); break;
             case "rec.delete": DeleteRecording(Read(message, "id")); break;
             case "rec.export.begin": BeginExport(Read(message, "title")); break;
             case "rec.export.chunk": ExportChunk(Read(message, "data")); break;

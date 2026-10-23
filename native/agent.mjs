@@ -35,6 +35,13 @@ async function call(command, args = {}) {
   return result;
 }
 
+// { full } raises the limits; { diff } returns only elements that changed since this tab's previous snapshot.
+const snapshotArgs = (options) => ({
+  textLimit: options.full ? 20000 : options.textLimit,
+  elementLimit: options.full ? 250 : options.elementLimit,
+  diff: !!options.diff,
+});
+
 function scoped(session, label) {
   const send = (command, args = {}) => call(command, { session, owner, ...args });
   return Object.freeze({
@@ -44,18 +51,21 @@ function scoped(session, label) {
     open: (url) => send('new', { url }),
     show: (id) => send('show', { id }),
     goto: (id, url) => send('goto', { id, url }),
-    snapshot: (id, options = {}) => send('snapshot', { id,
-      textLimit: options.full ? 20000 : options.textLimit,
-      elementLimit: options.full ? 250 : options.elementLimit,
-    }),
+    snapshot: (id, options = {}) => send('snapshot', { id, ...snapshotArgs(options) }),
     click: (id, target) => send('click', { id, target }),
+    clickAt: (id, x, y, options = {}) => send('clickAt', { id, x, y, double: !!options.double }),
+    hover: (id, target) => send('hover', { id, target }),
     fill: (id, target, value) => send('fill', { id, target, value }),
+    type: (id, text) => send('type', { id, value: text }),
+    select: (id, target, option) => send('select', { id, target, value: option }),
     press: (id, key) => send('press', { id, key }),
     scroll: (id, direction, pixels = 600) => send('scroll', { id, direction, pixels }),
+    back: (id) => send('back', { id }),
+    forward: (id) => send('forward', { id }),
     wait: (id, target, timeout = 10000) => send('wait', { id, target, timeout }),
     js: async (id, code) => (await send('js', { id, code })).result,
-    screenshot: async (id, file) => {
-      const { png } = await send('screenshot', { id });
+    screenshot: async (id, file, options = {}) => {
+      const { png } = await send('screenshot', { id, annotate: !!options.annotate });
       await fs.writeFile(file, Buffer.from(png, 'base64'));
       return path.resolve(file);
     },
@@ -85,18 +95,21 @@ const browser = Object.freeze({
     return Object.freeze({
       id: tab.id, title: tab.title, url: tab.url,
       goto: (url) => send('goto', { url }),
-      snapshot: (options = {}) => send('snapshot', {
-        textLimit: options.full ? 20000 : options.textLimit,
-        elementLimit: options.full ? 250 : options.elementLimit,
-      }),
+      snapshot: (options = {}) => send('snapshot', snapshotArgs(options)),
       click: (target) => send('click', { target }),
+      clickAt: (x, y, options = {}) => send('clickAt', { x, y, double: !!options.double }),
+      hover: (target) => send('hover', { target }),
       fill: (target, value) => send('fill', { target, value }),
+      type: (text) => send('type', { value: text }),
+      select: (target, option) => send('select', { target, value: option }),
       press: (key) => send('press', { key }),
       scroll: (direction, pixels = 600) => send('scroll', { direction, pixels }),
+      back: () => send('back'),
+      forward: () => send('forward'),
       wait: (target, timeout = 10000) => send('wait', { target, timeout }),
       js: async (code) => (await send('js', { code })).result,
-      screenshot: async (file) => {
-        const { png } = await send('screenshot');
+      screenshot: async (file, options = {}) => {
+        const { png } = await send('screenshot', { annotate: !!options.annotate });
         await fs.writeFile(file, Buffer.from(png, 'base64'));
         return path.resolve(file);
       },

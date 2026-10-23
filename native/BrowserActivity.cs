@@ -18,6 +18,11 @@ public sealed partial class BrowserForm
         "snapshot" => "AI가 페이지를 읽고 있어요",
         "press" => "AI가 키를 누르고 있어요",
         "wait" => "AI가 페이지를 기다리고 있어요",
+        "hover" => "AI가 메뉴를 살펴보고 있어요",
+        "select" => "AI가 항목을 고르고 있어요",
+        "type" => "AI가 입력하고 있어요",
+        "clickAt" => "AI가 클릭하고 있어요",
+        "back" or "forward" => "AI가 페이지를 옮기고 있어요",
         _ => "AI가 브라우저를 조작하고 있어요"
     };
 
@@ -25,7 +30,7 @@ public sealed partial class BrowserForm
     {
         var label = done ? "브라우저 조작 완료" : ActivityLabel(command);
         var script = ReadResource("activity.js") + "\nwindow.__pluckActivity(" + JsonSerializer.Serialize(label) + ","
-            + JsonSerializer.Serialize(target) + "," + (done ? "true" : "false") + ")";
+            + JsonSerializer.Serialize(target) + "," + (done ? "true" : "false") + "," + JsonSerializer.Serialize(command) + ")";
         try
         {
             if (frameId == "f0") await tab.View.CoreWebView2!.ExecuteScriptAsync(script);

@@ -63,7 +63,7 @@ public sealed partial class BrowserForm
         using var dialog = new FolderBrowserDialog
         {
             Description = "AI가 작업할 폴더를 고르세요", UseDescriptionForTitle = true,
-            InitialDirectory = chat.Cwd ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            InitialDirectory = chat.Cwd ?? AiWorkDir
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         SetFolder(chat, dialog.SelectedPath);

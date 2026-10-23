@@ -51,7 +51,9 @@ static class Program
         Add(3, "work", "run-b");
         Command(new { command = "cleanup-run", owner = "run-a" });
         Check(tabs.Contains(1) && !tabs.Contains(2) && tabs.Contains(3), "cleanup preserves user and other run in same space");
-        Command(new { command = "close", id = 3, space = "work" });
+        // Session ids are issued by the browser; register this test's space the way a restored session would be.
+        type.GetMethod("RestoreSession", Private)!.Invoke(form, ["work", "work", "terminal"]);
+        Command(new { command = "close", id = 3, session = "work" });
         Check(!tabs.Contains(3), "uninitialized WebView can be closed");
         Add(4, "stale", "old", 16);
         Add(5, "busy", "busy", 16, 1);

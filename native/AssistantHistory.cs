@@ -23,6 +23,8 @@ public sealed partial class BrowserForm
         public string? Effort { get; set; }
         public string? Mode { get; set; }
         public string? Cwd { get; set; }
+        // Folder the Claude session was created in; null means the old internal workspace default.
+        public string? SessionCwd { get; set; }
         public List<QueuedPrompt> Pending { get; set; } = [];
         public List<JsonObject> Events { get; set; } = [];
     }
