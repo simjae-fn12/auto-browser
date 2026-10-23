@@ -16,6 +16,8 @@ public sealed partial class BrowserForm
         public bool Interrupted { get; set; }
         public bool Selected { get; set; }
         public string? BrowserRuntime { get; set; }
+        // Browser session holding this conversation's tabs; a handoff keeps the source's session.
+        public string? Space { get; set; }
         public List<QueuedPrompt> Pending { get; set; } = [];
         public List<JsonObject> Events { get; set; } = [];
     }
@@ -68,7 +70,12 @@ public sealed partial class BrowserForm
 
     private Conversation[] HistorySnapshot() => conversations.Select(c => new Conversation
     { Id = c.Id, Engine = c.Engine, Title = c.Title, Session = c.Session, NeedsContext = c.NeedsContext,
-        Running = c.Running, Interrupted = c.Interrupted, Selected = c.Selected, BrowserRuntime = c.BrowserRuntime, Pending = c.Pending.ToList(), Events = c.Events.ToList() }).ToArray();
+        Running = c.Running, Interrupted = c.Interrupted, Selected = c.Selected, BrowserRuntime = c.BrowserRuntime, Space = c.Space,
+        Pending = c.Pending.ToList(), Events = c.Events.ToList() }).ToArray();
+
+    private static string SpaceOf(Conversation chat) => chat.Space ??= chat.Id;
+
+    private static string SessionTitle(Conversation chat) => (chat.Engine == "claude" ? "Claude" : "Codex") + " · " + chat.Title;
 
     private void WriteHistory(Conversation[] snapshot)
     {
@@ -139,6 +146,7 @@ public sealed partial class BrowserForm
         if (entry["kind"]?.ToString() == "user" && chat.Title == "새 대화")
         {
             chat.Title = string.IsNullOrWhiteSpace(entry["text"]?.ToString()) ? "사진을 첨부한 대화" : Clip(entry["text"]?.ToString(), 48);
+            if (sessions.ContainsKey(SpaceOf(chat))) OpenSession(SpaceOf(chat), SessionTitle(chat));
             PostConversationList(engine);
         }
         // Batch disk work off the UI thread, including partial replies during long runs.

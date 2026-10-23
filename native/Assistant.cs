@@ -22,8 +22,8 @@ public sealed partial class BrowserForm
         Directory.CreateDirectory(workspace);
         File.WriteAllText(Path.Combine(workspace, "agent.mjs"), ReadResource("agent.mjs"));
         var instructions = ReadResource("assistant.md");
-        File.WriteAllText(Path.Combine(workspace, "CLAUDE.md"), instructions.Replace("{{SPACE}}", "Claude"));
-        File.WriteAllText(Path.Combine(workspace, "AGENTS.md"), instructions.Replace("{{SPACE}}", "Codex"));
+        File.WriteAllText(Path.Combine(workspace, "CLAUDE.md"), instructions);
+        File.WriteAllText(Path.Combine(workspace, "AGENTS.md"), instructions);
         return workspace;
     }
 
@@ -121,9 +121,12 @@ public sealed partial class BrowserForm
             return;
         }
         if (conversation.NeedsContext) prompt = HandoffContext(conversation, workspace) + prompt;
+        var space = SpaceOf(conversation);
+        var browserSession = OpenSession(space, SessionTitle(conversation), "panel");
+        browserSession.Kind = "panel";
         if (conversation.BrowserRuntime != browserRuntime)
-            prompt = "[Browser restarted or new session] Previous tab IDs and element references may be stale. Match the prior task to the current tabs by URL and space, then take a fresh snapshot. The visible tab may be unrelated: do not switch the task to it merely because it is active. If the task tab is missing, reopen its known URL from the conversation and inspect the site's saved draft before repeating edits. Unsaved page memory may be lost. Current tabs: "
-                + JsonSerializer.Serialize(State()) + "\n\n" + prompt;
+            prompt = "[Browser restarted or new session] Previous tab IDs and element references may be stale. Match the prior task to your session's current tabs by URL, then take a fresh snapshot. The visible tab may be unrelated: do not switch the task to it merely because it is active. If the task tab is missing, reopen its known URL from the conversation and inspect the site's saved draft before repeating edits. Unsaved page memory may be lost. Your session's tabs: "
+                + JsonSerializer.Serialize(State(space)) + "\n\n" + prompt;
         if (images.Length > 0)
             prompt += "\n\n[Attached images, in order]\n" + string.Join("\n", images.Select(image => image.Name + ": " + ImagePath(image)));
         PostAssistant(engine, new { kind = "user", text, images = attachments });
@@ -134,8 +137,10 @@ public sealed partial class BrowserForm
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
         };
-        if (connectionFile != null) info.Environment["PLUCK_NATIVE_CONNECTION"] = connectionFile;
         IsolateAssistantEnvironment(info);
+        if (connectionFile != null) info.Environment["PLUCK_NATIVE_CONNECTION"] = connectionFile;
+        info.Environment["PLUCK_SESSION"] = space;
+        info.Environment["PLUCK_SESSION_LABEL"] = browserSession.Label;
         var session = aiSessions.GetValueOrDefault(engine);
         if (engine == "claude")
         {

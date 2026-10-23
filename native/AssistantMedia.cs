@@ -82,6 +82,7 @@ public sealed partial class BrowserForm
         if (currentConversations[sourceEngine] == source) StopAssistant(sourceEngine);
         var chat = NewConversation(targetEngine);
         chat.Title = source.Title;
+        chat.Space = SpaceOf(source);
         chat.NeedsContext = true;
         chat.Events = source.Events.Select(e => e.DeepClone().AsObject()).ToList();
         currentConversations[targetEngine] = chat;

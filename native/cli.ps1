@@ -8,8 +8,11 @@ param(
 $connectionPath = Join-Path $env:APPDATA 'pluck-windows-native\connection.json'
 if (-not (Test-Path -LiteralPath $connectionPath)) { throw 'pluck Windows Native를 먼저 실행하세요.' }
 $connection = Get-Content -LiteralPath $connectionPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$body = @{ command = $Command }
+# Every command acts for one session. Run `session` once, then set $env:PLUCK_SESSION to the id it prints.
+$body = @{ command = $Command; session = $env:PLUCK_SESSION }
 switch ($Command) {
+    'session' { $body.label = $Arg1 }
+    'active' { }
     'new' { $body.url = $Arg1 }
     'list' { }
     'save' { }

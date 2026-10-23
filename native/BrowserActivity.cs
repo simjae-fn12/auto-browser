@@ -5,6 +5,10 @@ namespace PluckWindowsNative;
 public sealed partial class BrowserForm
 {
     private bool followAssistant = true;
+    // The engine whose conversation is showing in the open AI panel; null while the panel is closed.
+    private string? aiViewEngine;
+
+    private string? FollowedSpace() => aiViewEngine is { } engine && currentConversations.TryGetValue(engine, out var chat) ? SpaceOf(chat) : null;
     private static string ActivityLabel(string command) => command switch
     {
         "click" => "AI가 클릭하고 있어요",

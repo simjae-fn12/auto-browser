@@ -24,16 +24,39 @@ public sealed partial class BrowserForm : Form
         public int Order { get; set; }
         public bool Loading { get; set; }
         public Dictionary<string, CoreWebView2Frame> Frames { get; } = [];
+        // Latest overview thumbnail, and the capture still running for it; hidden tabs can take seconds to yield a frame.
+        public string? Thumb { get; set; }
+        public Task<string?>? ThumbCapture { get; set; }
+        public DateTime ThumbStarted { get; set; }
+        public bool ThumbDue { get; set; }
+    }
+
+    // One AI panel conversation or one terminal agent. Its tabs are invisible to every other session.
+    private sealed class AgentSession(string id, string label, string kind)
+    {
+        public string Id { get; } = id;
+        public string Label { get; set; } = label;
+        public string Kind { get; set; } = kind;
+        public int Order { get; init; }
+        // The person's tabs this session may drive, granted only by reading the tab they are looking at.
+        public HashSet<int> UserTabs { get; } = [];
+        // Last command or heartbeat; a terminal agent counts as working while this is recent.
+        public DateTime LastSeen { get; set; } = DateTime.MinValue;
+        public string Activity { get; set; } = "";
+        // Set from the overview; a terminal agent cannot be killed, so its further commands are refused instead.
+        public bool Stopped { get; set; }
     }
 
     private sealed record SavedTab(string Url, string Space, bool Active = false);
 
     private const string Home = "https://www.google.com/";
+    private static readonly System.Text.RegularExpressions.Regex SessionIdPattern = new("^[A-Za-z0-9_-]{6,64}$");
     private readonly string dataDir = Environment.GetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR")
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "pluck-windows-native");
     private readonly TabControl tabs = new ContentTabs { Dock = DockStyle.Fill };
     private readonly Dictionary<int, BrowserTab> browserTabs = [];
-    private readonly HashSet<string> spaces = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, AgentSession> sessions = new(StringComparer.Ordinal);
+    private int nextSessionOrder = 1;
     private readonly System.Windows.Forms.Timer cleanupTimer = new() { Interval = 60000 };
     private CoreWebView2Environment? environment;
     private HttpListener? listener;
@@ -79,11 +102,12 @@ public sealed partial class BrowserForm : Form
             Directory.CreateDirectory(dataDir);
             environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(dataDir, "profile"));
             await InitializeChromeAsync();
+            foreach (var (id, label, kind) in ReadSavedSessions()) RestoreSession(id, label, kind);
             var saved = ReadSavedTabs();
             var restored = saved.Length == 0 ? [new SavedTab(Home, "user")] : saved;
             for (var i = 0; i < restored.Length; i++)
             {
-                if (restored[i].Space != "user") spaces.Add(restored[i].Space);
+                if (restored[i].Space != "user") RestoreSession(restored[i].Space, restored[i].Space, "terminal");
                 await CreateTabAsync(restored[i].Url, restored[i].Space, restored[i].Active || (!restored.Any(tab => tab.Active) && i == 0));
             }
             Active()?.View.Focus();
@@ -116,13 +140,52 @@ public sealed partial class BrowserForm : Form
         catch { return []; }
     }
 
+    private (string Id, string Label, string Kind)[] ReadSavedSessions()
+    {
+        try
+        {
+            var root = JsonNode.Parse(File.ReadAllText(Path.Combine(dataDir, "tabs.json")));
+            return (root is JsonObject ? root["sessions"]?.AsArray() ?? [] : [])
+                .Select(item => (Id: item?["id"]?.GetValue<string>() ?? "", Label: item?["label"]?.GetValue<string>() ?? "", Kind: item?["kind"]?.GetValue<string>() ?? "terminal"))
+                .Where(item => item.Id is not ("" or "user") && item.Id.Length <= 80 && item.Label.Length > 0).ToArray();
+        }
+        catch { return []; }
+    }
+
     private void SaveTabs()
     {
         if (!Directory.Exists(dataDir)) return;
         var saved = OrderedTabs().Select(tab => new { url = tab.View.Source?.ToString(), space = tab.Space, active = tab == Active() })
             .Where(tab => Uri.TryCreate(tab.url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "file").ToArray();
-        File.WriteAllText(Path.Combine(dataDir, "tabs.json"), JsonSerializer.Serialize(new { tabs = saved }));
+        var savedSessions = sessions.Values.Where(session => saved.Any(tab => tab.space == session.Id)).OrderBy(session => session.Order)
+            .Select(session => new { id = session.Id, label = session.Label, kind = session.Kind }).ToArray();
+        File.WriteAllText(Path.Combine(dataDir, "tabs.json"), JsonSerializer.Serialize(new { tabs = saved, sessions = savedSessions }));
     }
+
+    // Restored sessions keep whatever id they were saved with, including names from before sessions had ids.
+    private void RestoreSession(string id, string label, string kind)
+    {
+        if (!sessions.ContainsKey(id)) sessions[id] = new AgentSession(id, label, kind) { Order = nextSessionOrder++ };
+    }
+
+    private AgentSession OpenSession(string id, string? label = null, string kind = "terminal")
+    {
+        if (!sessions.TryGetValue(id, out var session))
+        {
+            if (id is "user" or "legacy" || !SessionIdPattern.IsMatch(id)) throw new InvalidOperationException("Invalid session id");
+            sessions[id] = session = new AgentSession(id, "세션 " + id[^6..], kind) { Order = nextSessionOrder++ };
+        }
+        if (!string.IsNullOrWhiteSpace(label) && Clip(label.Trim(), 60) is var name && name != session.Label)
+        {
+            session.Label = name;
+            RefreshSidebar();
+        }
+        return session;
+    }
+
+    private static string NewSessionId() => "s" + Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant();
+
+    private string SessionLabel(string space) => sessions.GetValueOrDefault(space)?.Label ?? space;
 
     private async Task<BrowserTab> CreateTabAsync(string? url, string space, bool select, bool navigate = true, string owner = "")
     {
@@ -131,7 +194,7 @@ public sealed partial class BrowserForm : Form
             || browserTabs.Values.Count(tab => tab.Space == space) >= 20))
             throw new InvalidOperationException("Agent tab limit reached (20 per space, 60 total). Close unused tabs first.");
         var id = nextId++;
-        var page = new TabPage(space == "user" ? "새 탭" : $"◆ {space} {id}") { Padding = Padding.Empty, BackColor = Color.White };
+        var page = new TabPage(space == "user" ? "새 탭" : $"◆ {SessionLabel(space)} {id}") { Padding = Padding.Empty, BackColor = Color.White };
         var view = new WebView2 { Dock = DockStyle.Fill };
         view.KeyDown += OnShortcut;
         page.Controls.Add(view);
@@ -146,7 +209,12 @@ public sealed partial class BrowserForm : Form
             view.CoreWebView2.DocumentTitleChanged += (_, _) => UpdateTitle(tab);
             view.CoreWebView2.SourceChanged += (_, _) => { if (Active() == tab) RefreshAddress(); };
             view.CoreWebView2.NavigationStarting += (_, _) => { tab.Frames.Clear(); tab.Loading = true; RefreshSidebar(); };
-            view.CoreWebView2.NavigationCompleted += (_, _) => { tab.Loading = false; if (Active() == tab) RefreshAddress(); else RefreshSidebar(); };
+            view.CoreWebView2.NavigationCompleted += (_, _) =>
+            {
+                tab.Loading = false;
+                if (Active() == tab) RefreshAddress(); else RefreshSidebar();
+                ScheduleThumbnail(tab);
+            };
             view.CoreWebView2.FaviconChanged += (_, _) => RefreshSidebar();
             view.CoreWebView2.HistoryChanged += (_, _) => { if (Active() == tab) RefreshNavigation(); };
             view.CoreWebView2.FrameCreated += (_, e) =>
@@ -189,7 +257,7 @@ public sealed partial class BrowserForm : Form
     private void UpdateTitle(BrowserTab tab)
     {
         var title = tab.View.CoreWebView2?.DocumentTitle;
-        tab.Page.Text = (tab.Agent ? $"◆ {tab.Space} · " : "") + (string.IsNullOrWhiteSpace(title) ? "새 탭" : title.Length > 24 ? title[..24] + "…" : title);
+        tab.Page.Text = (tab.Agent ? $"◆ {SessionLabel(tab.Space)} · " : "") + (string.IsNullOrWhiteSpace(title) ? "새 탭" : title.Length > 24 ? title[..24] + "…" : title);
         if (Active() == tab) Text = string.IsNullOrWhiteSpace(title) ? "pluck" : $"{title} — pluck";
         RefreshSidebar();
     }
@@ -240,6 +308,7 @@ public sealed partial class BrowserForm : Form
         else if (ctrl && !alt && !shift && key == Keys.K) _ = OpenPaletteAsync("tabs");
         else if (ctrl && !alt && !shift && key == Keys.W) { if (Active() is { } tab) CloseTab(tab); }
         else if (ctrl && !alt && shift && key == Keys.S) { _ = AnimateSidebarAsync(!sidebarTarget); }
+        else if (ctrl && !alt && shift && key == Keys.O) _ = OpenOverviewAsync();
         else if (ctrl && !alt && !shift && key == Keys.J) { chromeView.Focus(); PostChrome(new { type = "assist" }); }
         else if (ctrl && !alt && key == Keys.Tab && ordered.Length > 0)
             ShowTab(ordered[(index + (shift ? ordered.Length - 1 : 1) + ordered.Length) % ordered.Length]);
@@ -291,7 +360,8 @@ public sealed partial class BrowserForm : Form
         tab.Frames.Clear();
         tab.View.Dispose();
         tab.Page.Dispose();
-        if (tab.Agent && !browserTabs.Values.Any(other => other.Space == tab.Space)) spaces.Remove(tab.Space);
+        if (tab.Agent && !browserTabs.Values.Any(other => other.Space == tab.Space) && sessions.GetValueOrDefault(tab.Space)?.Stopped != true)
+            sessions.Remove(tab.Space);
         RefreshSidebar();
         if (browserTabs.Count == 0) _ = CreateTabAsync(Home, "user", true);
     }
@@ -306,15 +376,17 @@ public sealed partial class BrowserForm : Form
         }
     }
 
-    private object State(string? space = null) => new
+    private object State(string space) => new
     {
-        active = space == null || Active()?.Space == space ? Active()?.Id : null,
-        tabs = browserTabs.Values.Where(tab => space == null || tab.Space == space).Select(tab => new
-        {
-            id = tab.Id, agent = tab.Agent, space = tab.Space, title = tab.View.CoreWebView2?.DocumentTitle ?? "",
-            url = tab.View.Source?.ToString() ?? ""
-        }).ToArray()
+        active = Active()?.Space == space ? Active()?.Id : null,
+        tabs = SessionTabs(space)
     };
+
+    private object[] SessionTabs(string space) => browserTabs.Values.Where(tab => tab.Space == space).Select(tab => (object)new
+    {
+        id = tab.Id, agent = tab.Agent, space = tab.Space, title = tab.View.CoreWebView2?.DocumentTitle ?? "",
+        url = tab.View.Source?.ToString() ?? ""
+    }).ToArray();
 
     private void StartServer()
     {
@@ -385,16 +457,23 @@ public sealed partial class BrowserForm : Form
     private async Task<object?> CommandAsync(JsonElement body)
     {
         var command = Read(body, "command");
-        var requestedSpace = Read(body, "space");
         var owner = Read(body, "owner");
         if (command is "cleanup-run" or "heartbeat")
         {
             if (string.IsNullOrWhiteSpace(owner)) throw new InvalidOperationException("Run owner required");
             var owned = browserTabs.Values.Where(tab => tab.Agent && tab.Owner == owner).ToArray();
             foreach (var ownedTab in owned)
-                if (command == "cleanup-run") CloseTab(ownedTab);
+                // A run that failed because the person stopped or took over its session leaves its tabs for them.
+                if (command == "cleanup-run") { if (sessions.GetValueOrDefault(ownedTab.Space)?.Stopped != true) CloseTab(ownedTab); }
                 else ownedTab.LastUsed = DateTime.UtcNow;
+            if (command == "heartbeat" && sessions.GetValueOrDefault(Read(body, "session")) is { } beating) beating.LastSeen = DateTime.UtcNow;
             return new { ok = true, count = owned.Length };
+        }
+        if (command == "release")
+        {
+            // An agent.mjs run ended, so the overview stops showing its session as working.
+            if (sessions.GetValueOrDefault(Read(body, "session")) is { } released) released.LastSeen = DateTime.MinValue;
+            return new { ok = true };
         }
         if (command == "shutdown")
         {
@@ -402,61 +481,70 @@ public sealed partial class BrowserForm : Form
             return new { ok = true };
         }
         if (command == "save") { SaveTabs(); return new { ok = true }; }
-        if (command == "spaces") return spaces.Select(space => new
+
+        // Everything else acts for exactly one session, so concurrent agents never see or touch each other's tabs.
+        var requested = Read(body, "session");
+        if (command == "session")
         {
-            name = space, tabs = browserTabs.Values.Count(tab => tab.Space == space)
-        }).ToArray();
-        if (command == "space")
-        {
-            if (string.IsNullOrWhiteSpace(requestedSpace) || requestedSpace.Length > 80)
-                throw new InvalidOperationException("Space name must be 1-80 characters");
-            if (requestedSpace is "user" or "legacy")
-                throw new InvalidOperationException("Space name is reserved");
-            spaces.Add(requestedSpace);
-            return State(requestedSpace);
+            var created = requested.Length == 0;
+            var opened = OpenSession(created ? NewSessionId() : requested, Read(body, "label"));
+            if (opened.Stopped) throw new InvalidOperationException(StoppedMessage);
+            opened.LastSeen = DateTime.UtcNow;
+            return new { session = opened.Id, label = opened.Label, created, tabs = SessionTabs(opened.Id) };
         }
+        if (requested.Length == 0) throw new InvalidOperationException("Session required. Run through agent.mjs, or set PLUCK_SESSION for cli.ps1.");
+        var session = OpenSession(requested);
+        if (session.Stopped) throw new InvalidOperationException(StoppedMessage);
+        session.LastSeen = DateTime.UtcNow;
         if (command == "list")
         {
-            foreach (var listedTab in browserTabs.Values.Where(tab => tab.Space == requestedSpace))
+            foreach (var listedTab in browserTabs.Values.Where(tab => tab.Space == session.Id))
                 listedTab.LastUsed = DateTime.UtcNow;
-            return State(requestedSpace.Length == 0 ? null : requestedSpace);
+            return State(session.Id);
         }
         if (command == "active")
         {
-            var active = Active();
+            var active = Active() ?? throw new InvalidOperationException("No active tab");
+            if (active.Space != "user" && active.Space != session.Id)
+                throw new InvalidOperationException("The person is looking at another session's tab");
+            if (active.Space == "user") session.UserTabs.Add(active.Id);
             return new
             {
-                id = active?.Id, space = active?.Space, title = active?.View.CoreWebView2?.DocumentTitle ?? "",
-                url = active?.View.Source?.ToString() ?? ""
+                id = active.Id, space = active.Space, title = active.View.CoreWebView2?.DocumentTitle ?? "",
+                url = active.View.Source?.ToString() ?? ""
             };
         }
         if (command == "new")
-        {
-            if (requestedSpace == "user") throw new InvalidOperationException("User tabs cannot be created by an agent");
-            var space = requestedSpace.Length == 0 ? "legacy" : requestedSpace;
-            spaces.Add(space);
-            return new { id = (await CreateTabAsync(Read(body, "url"), space, false, owner: owner)).Id };
-        }
+            return new { id = (await CreateTabAsync(Read(body, "url"), session.Id, false, owner: owner)).Id };
         var tab = browserTabs.GetValueOrDefault(int.TryParse(Read(body, "id"), out var id) ? id : -1)
             ?? throw new InvalidOperationException("Unknown tab");
-        if (requestedSpace.Length > 0 && tab.Space != requestedSpace)
-            throw new InvalidOperationException("Tab belongs to another space");
-        if (command == "close") { CloseTab(tab); return new { ok = true }; }
+        var userTab = tab.Space == "user";
+        if (userTab ? !session.UserTabs.Contains(tab.Id) : tab.Space != session.Id)
+            throw new InvalidOperationException("Tab belongs to another session");
+        if (command == "close")
+        {
+            if (userTab) throw new InvalidOperationException("The person's tabs cannot be closed by an agent");
+            CloseTab(tab);
+            return new { ok = true };
+        }
         var core = tab.View.CoreWebView2 ?? throw new InvalidOperationException("Tab is not ready");
+        // Only the conversation the person is watching in the AI panel may move their view or status line.
+        var followed = followAssistant && session.Id == FollowedSpace();
         tab.LastUsed = DateTime.UtcNow;
         tab.PendingCommands++;
+        if (command != "screenshot") session.Activity = ActivityLabel(command);
         RefreshSidebar();
         try
         {
         if (command != "screenshot")
         {
-            if (followAssistant && aiRuns.Count > 0) ShowTab(tab);
-            PostChrome(new { type = "activity", running = true, label = ActivityLabel(command) });
+            if (followed && !userTab) ShowTab(tab);
+            if (followed) PostChrome(new { type = "activity", running = true, label = ActivityLabel(command) });
             await ShowActivityAsync(tab, command, command == "press" ? ":focus" : "");
         }
         switch (command)
         {
-            case "show": tabs.SelectedTab = tab.Page; return new { id = tab.Id };
+            case "show": return new { id = tab.Id, shown = followed };
             case "goto": return new { url = await NavigateAsync(core, NormalizeUrl(Read(body, "url"))) };
             case "snapshot": return await SnapshotAsync(tab,
                 int.TryParse(Read(body, "textLimit"), out var textLimit) ? Math.Clamp(textLimit, 100, 20000) : 4000,
@@ -479,10 +567,12 @@ public sealed partial class BrowserForm : Form
         finally
         {
             tab.PendingCommands--; tab.LastUsed = DateTime.UtcNow; RefreshSidebar();
+            ScheduleThumbnail(tab);
             if (command != "screenshot")
             {
                 await ShowActivityAsync(tab, command, done: true);
-                PostChrome(new { type = "activity", running = browserTabs.Values.Any(t => t.PendingCommands > 0), label = ActivityLabel(command) });
+                if (followed)
+                    PostChrome(new { type = "activity", running = browserTabs.Values.Any(t => t.Space == session.Id && t.PendingCommands > 0), label = ActivityLabel(command) });
             }
         }
     }

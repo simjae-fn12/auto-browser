@@ -83,6 +83,7 @@ public sealed partial class BrowserForm
             case "ai.reset": SelectConversation(Read(message, "engine")); break;
             case "ai.select": SelectConversation(Read(message, "engine"), Read(message, "id")); break;
             case "ai.follow": followAssistant = Read(message, "enabled") == "True"; break;
+            case "ai.view": aiViewEngine = Engines.Contains(Read(message, "engine")) ? Read(message, "engine") : null; break;
             case "ai.focus": chromeView.Focus(); break;
             case "ai.blur": if (!paletteOpen) Active()?.View.Focus(); break;
             case "layout": PlaceViewport(message); break;
@@ -128,6 +129,11 @@ public sealed partial class BrowserForm
                 RefreshSidebar();
                 break;
             case "palette": _ = OpenPaletteAsync(Read(message, "mode")); break;
+            case "overview": _ = OpenOverviewAsync(); break;
+            case "overview.refresh": _ = RefreshOverviewAsync(); break;
+            case "overview.open": OpenSessionTab(Read(message, "space")); break;
+            case "overview.stop": StopSession(Read(message, "space")); break;
+            case "overview.takeover": StopSession(Read(message, "space")); OpenSessionTab(Read(message, "space")); break;
             case "frozen":
                 viewport.Visible = false;
                 chromeView.Focus();
@@ -147,7 +153,8 @@ public sealed partial class BrowserForm
             chromeView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message));
     }
 
-    private BrowserTab[] OrderedTabs() => browserTabs.Values.OrderBy(tab => tab.Agent).ThenBy(tab => tab.Space, StringComparer.Ordinal)
+    private BrowserTab[] OrderedTabs() => browserTabs.Values.OrderBy(tab => tab.Agent)
+        .ThenBy(tab => sessions.GetValueOrDefault(tab.Space)?.Order ?? int.MaxValue).ThenBy(tab => tab.Space, StringComparer.Ordinal)
         .ThenBy(tab => tab.Order).ThenBy(tab => tab.Id).ToArray();
 
     private object ChromeState()
@@ -164,7 +171,7 @@ public sealed partial class BrowserForm
             collapsed = sidebarCollapsed,
             tabs = OrderedTabs().Select(tab => new
             {
-                id = tab.Id, space = tab.Space, agent = tab.Agent,
+                id = tab.Id, space = tab.Space, label = tab.Agent ? SessionLabel(tab.Space) : "", agent = tab.Agent,
                 title = tab.View.CoreWebView2?.DocumentTitle ?? "",
                 url = tab.View.Source?.ToString() ?? "",
                 favicon = tab.View.CoreWebView2?.FaviconUri ?? "",

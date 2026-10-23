@@ -5,8 +5,17 @@ import { randomUUID } from 'node:crypto';
 
 const owner = randomUUID();
 const args = process.argv.slice(2);
-const keepTabs = args.includes('--keep-tabs');
-const scriptPath = args.find(arg => arg !== '--keep-tabs');
+let keepTabs = false;
+let scriptPath;
+// The AI panel passes its conversation's session in the environment; a terminal agent passes --session to reuse its tabs.
+let sessionId = process.env.PLUCK_SESSION || '';
+let sessionLabel = process.env.PLUCK_SESSION_LABEL || '';
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--keep-tabs') keepTabs = true;
+  else if (args[i] === '--session') sessionId = args[++i] ?? '';
+  else if (args[i] === '--label') sessionLabel = args[++i] ?? '';
+  else scriptPath ??= args[i];
+}
 
 const connectionPath = process.env.PLUCK_NATIVE_CONNECTION
   || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'pluck-windows-native', 'connection.json');
@@ -26,10 +35,11 @@ async function call(command, args = {}) {
   return result;
 }
 
-function scoped(space) {
-  const send = (command, args = {}) => call(command, { space, owner, ...args });
+function scoped(session, label) {
+  const send = (command, args = {}) => call(command, { session, owner, ...args });
   return Object.freeze({
-    name: space,
+    id: session,
+    name: label,
     list: () => send('list'),
     open: (url) => send('new', { url }),
     show: (id) => send('show', { id }),
@@ -53,13 +63,25 @@ function scoped(space) {
   });
 }
 
+let opened;
+function session(label) {
+  return opened ??= call('session', { session: sessionId, label: label || sessionLabel }).then(result => {
+    if (result.created && keepTabs)
+      console.error(`pluck session ${result.session}: pass --session ${result.session} to the next run to keep using these tabs.`);
+    sessionId = result.session;
+    return scoped(result.session, result.label);
+  });
+}
+
 const browser = Object.freeze({
-  listSpaces: () => call('spaces'),
+  session,
+  // Older scripts named a shared space; the name is now only this session's label.
+  useOrCreateSpace: (name) => session(name),
   // The tab the person is looking at. It cannot be opened or closed from here, only read and driven.
   activeTab: async () => {
-    const tab = await call('active');
-    if (!tab.id) throw new Error('No active tab');
-    const send = (command, args = {}) => call(command, { space: tab.space, owner, ...args, id: tab.id });
+    await session();
+    const tab = await call('active', { session: sessionId });
+    const send = (command, args = {}) => call(command, { session: sessionId, owner, ...args, id: tab.id });
     return Object.freeze({
       id: tab.id, title: tab.title, url: tab.url,
       goto: (url) => send('goto', { url }),
@@ -79,10 +101,6 @@ const browser = Object.freeze({
         return path.resolve(file);
       },
     });
-  },
-  useOrCreateSpace: async (name) => {
-    await call('space', { space: name });
-    return scoped(name);
   },
 });
 
@@ -105,7 +123,7 @@ function cleanup() {
   });
 }
 const heartbeat = setInterval(() => {
-  call('heartbeat', { owner }).catch(error => console.error(`Agent heartbeat failed: ${error.message}`));
+  call('heartbeat', { owner, session: sessionId }).catch(error => console.error(`Agent heartbeat failed: ${error.message}`));
 }, 30000);
 heartbeat.unref();
 for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -122,4 +140,5 @@ try {
 } finally {
   clearInterval(heartbeat);
   if (!keepTabs || !succeeded) await cleanup();
+  if (opened) await call('release', { session: sessionId }).catch(() => {});
 }
