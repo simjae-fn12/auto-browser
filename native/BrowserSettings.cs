@@ -105,6 +105,7 @@ public sealed partial class BrowserForm
         PostChrome(AccountsMessage());
         PostSchedules();
         PostSetupState();
+        _ = PostExtensionSettingsAsync(Active()?.Profile ?? userProfile);
         foreach (var account in accounts.Items.Where(a => a.LoggedIn == null)) _ = CheckAccountAsync(account);
     }
 

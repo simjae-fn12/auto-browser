@@ -78,6 +78,7 @@ public sealed partial class BrowserForm
         if (type.StartsWith("sched.", StringComparison.Ordinal)) { HandleScheduleMessage(type, message); return; }
         if (type.StartsWith("prof.", StringComparison.Ordinal) || type.StartsWith("cred.", StringComparison.Ordinal)) { HandleProfileMessage(type, message); return; }
         if (type.StartsWith("setup.", StringComparison.Ordinal)) { HandleSetupMessage(type, message); return; }
+        if (type.StartsWith("ext.", StringComparison.Ordinal)) { _ = HandleExtensionMessageAsync(type, message.Clone()); return; }
         switch (type)
         {
             case "ready":
@@ -85,6 +86,8 @@ public sealed partial class BrowserForm
                 PostChrome(new { type = "settings.prefs", prefs = PrefsMessage() });
                 PostAccountUsage("claude"); PostAccountUsage("codex");
                 PostChrome(ProfilesMessage());
+                toolbarExtensionsKey = "";
+                _ = PostToolbarExtensionsAsync();
                 break;
             case "ai.send": SubmitAssistant(Read(message, "engine"), Read(message, "text"), Read(message, "context") == "True", Read(message, "picked")); break;
             case "ai.pick": _ = PickElementAsync(Read(message, "engine")); break;

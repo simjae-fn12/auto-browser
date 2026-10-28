@@ -132,7 +132,8 @@ public sealed partial class BrowserForm : Form
             ListenForLinks();
             try { foreach (var dir in new[] { RecordingVideosDir, AiWorkDir, ScreenshotsDir }) Directory.CreateDirectory(dir); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-            environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(dataDir, "profile"));
+            environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(dataDir, "profile"),
+                new CoreWebView2EnvironmentOptions { AreBrowserExtensionsEnabled = true });
             await InitializeChromeAsync();
             ApplyProfilePrefs();
             foreach (var (id, label, kind, profile) in ReadSavedSessions()) RestoreSession(id, label, kind, profile);
@@ -325,6 +326,7 @@ public sealed partial class BrowserForm : Form
         var title = tab?.View.CoreWebView2?.DocumentTitle;
         Text = string.IsNullOrWhiteSpace(title) ? "pluck" : $"{title} — pluck";
         RefreshSidebar();
+        _ = PostToolbarExtensionsAsync();
     }
 
     private static string NormalizeUrl(string? input)

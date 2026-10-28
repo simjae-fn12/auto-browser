@@ -120,6 +120,27 @@ body.collapsed .fade, body.collapsed .nav { opacity: 0; pointer-events: none; }
 #urlbar .path { color: var(--muted); }
 #urlbar .placeholder { color: var(--muted); }
 
+/* Extension buttons (WebView2 has no toolbar of its own) */
+#exts { margin: -2px 10px 8px; display: flex; flex-wrap: wrap; gap: 2px; align-items: center; flex: none; }
+#exts[hidden] { display: none; }
+#exts .ext { width: 30px; height: 28px; display: grid; place-items: center; border-radius: 7px; transition: background-color 120ms; }
+#exts .ext:hover { background: var(--hover); }
+#exts .ext img { width: 16px; height: 16px; }
+#exts .ext .noicon { width: 16px; height: 16px; border-radius: 4px; background: var(--hover); color: var(--muted); font: 600 10px/16px sans-serif; text-align: center; }
+#exts .store { height: 28px; padding: 0 10px; border-radius: 7px; background: var(--accent-strong); color: #fff; font-weight: 600; font-size: 12px; white-space: nowrap; }
+#exts .store:disabled { opacity: .6; }
+body.collapsed #exts { display: none; }
+.ext-list .ext-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 0; border-top: 1px solid var(--line); }
+.ext-list .ext-row:first-child { border-top: 0; }
+.ext-list .ext-row img, .ext-list .ext-row .noicon { width: 24px; height: 24px; flex: none; border-radius: 5px; }
+.ext-list .ext-row .noicon { background: var(--hover); }
+.ext-list .ext-row .lbl { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ext-list .ext-row .lbl span { color: var(--muted); font-size: 12px; }
+.ext-list .empty { padding: 14px 0; color: var(--muted); font-size: 12.5px; }
+.ext-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 0; }
+.ext-tools input, .ext-tools select { flex: 1; min-width: 200px; height: 32px; padding: 0 10px; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; outline: none; }
+.ext-tools input:focus, .ext-tools select:focus { border-color: var(--accent-strong); }
+
 /* New tab row */
 #newtab {
   margin: 0 10px 10px; height: 38px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px;
@@ -881,6 +902,7 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
       <span class="ico"><svg><use href="#i-search"/></svg></span>
       <span class="text fade"><span class="placeholder">검색어 또는 주소 입력</span></span>
     </button>
+    <div id="exts" hidden></div>
     <button id="newtab" title="새 탭 (Ctrl+T)">
       <svg><use href="#i-plus"/></svg><span class="fade">새 탭</span><kbd class="fade">Ctrl T</kbd>
     </button>
@@ -995,6 +1017,7 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
       <button class="sec" data-sec="ai">AI</button>
       <button class="sec" data-sec="accounts">AI 계정</button>
       <button class="sec" data-sec="profiles">프로필·사이트 계정</button>
+      <button class="sec" data-sec="extensions">확장 프로그램</button>
       <button class="sec" data-sec="schedules">예약 작업</button>
       <button class="sec" data-sec="recording">녹화</button>
       <button class="sec" data-sec="privacy">개인 정보</button>
@@ -1109,6 +1132,19 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
           <p class="lead">프로필은 Chrome 프로필처럼 로그인 상태(쿠키)를 따로 둡니다. 같은 사이트에 여러 계정으로 동시에 로그인해 둘 수 있습니다. 프로필마다 사이트 계정을 저장해 두면, AI가 작업에 맞는 프로필과 계정을 골라 로그인합니다. 비밀번호는 Windows 계정으로 암호화해 이 PC에만 저장합니다. AI는 비밀번호를 볼 수 없고, pluck은 저장된 사이트의 로그인 화면에만 비밀번호를 입력합니다. 단, <b>전체 권한</b>처럼 이 PC에서 명령을 마음대로 실행할 수 있는 AI는 같은 Windows 계정의 저장 파일을 직접 풀 수 있으니, 중요한 계정은 그런 대화에서 쓰지 마세요.</p>
           <div id="stProfiles"></div>
           <div class="prof-add"><input id="profNew" placeholder="새 프로필 이름 (예: fn12, gtmedia)" maxlength="40"><button class="st-btn" id="profAdd">+ 프로필 추가</button></div>
+        </section>
+
+        <section class="st-sec" data-sec="extensions">
+          <h3>확장 프로그램</h3>
+          <p class="lead">Chrome 웹 스토어의 확장 프로그램을 프로필마다 따로 설치합니다. 설치한 확장의 버튼은 사이드바 주소창 아래에 나오고, 누르면 확장 화면이 열립니다. 웹 스토어 페이지를 열면 사이드바에 「pluck에 추가」 버튼도 나옵니다. 일부 확장은 Chrome 전용 기능을 써서 제대로 동작하지 않을 수 있습니다.</p>
+          <div class="st-group">
+            <div class="ext-tools" data-kw="확장 extension 프로필"><b style="flex:none">프로필</b><select id="extProfile"></select></div>
+          </div>
+          <div class="st-group"><div class="ext-list" id="extList"></div></div>
+          <div class="st-group">
+            <div class="ext-tools" data-kw="웹 스토어 설치 store install"><input id="extStore" placeholder="크롬 웹 스토어 주소 또는 확장 ID" spellcheck="false"><button class="st-btn" id="extInstall">설치</button></div>
+            <div class="ext-tools" data-kw="크롬 chrome edge 가져오기 import"><select id="extSource"></select><button class="st-btn" id="extImport">이 프로필에서 가져오기</button></div>
+          </div>
         </section>
 
         <section class="st-sec" data-sec="schedules">
@@ -1411,6 +1447,7 @@ function renderChrome() {
     ? `<span class="host">${escapeHtml(url.host)}</span><span class="path">${escapeHtml(url.path)}</span>`
     : '<span class="placeholder">검색어 또는 주소 입력</span>';
   bar.title = url ? `${state.url}\n클릭하여 편집 (Ctrl+L)` : '주소 또는 검색 (Ctrl+L)';
+  renderExtensions();
   const progress = $('#progress');
   if (state.loading) {
     progress.classList.remove('done');
@@ -2540,6 +2577,56 @@ $('#stSchedules').addEventListener('click', event => {
 $('#stSchedules').addEventListener('focusout', () => setTimeout(() => {
   if (sched.dirty && !$('#stSchedules').contains(document.activeElement)) renderSchedules();
 }, 0));
+const exts = { profile: '', items: [], busy: false, settings: null };
+const STORE_PAGE = /^https:\/\/(chromewebstore\.google\.com\/detail\/|chrome\.google\.com\/webstore\/detail\/|microsoftedge\.microsoft\.com\/addons\/detail\/)\S*?[a-p]{32}/;
+function renderExtensions() {
+  const root = $('#exts');
+  const store = STORE_PAGE.test(state.url || '');
+  root.hidden = exts.items.length === 0 && !store;
+  root.innerHTML = exts.items.map(e => `<button class="ext" data-ext="${escapeHtml(e.id)}" title="${escapeHtml(e.name)}">`
+      + (e.icon ? `<img src="${escapeHtml(e.icon)}" alt="">` : `<span class="noicon">${escapeHtml((e.name || '?').slice(0, 1))}</span>`) + `</button>`).join('')
+    + (store ? `<button class="store" data-store${exts.busy ? ' disabled' : ''}>${exts.busy ? '추가하는 중…' : 'pluck에 추가'}</button>` : '');
+}
+$('#exts').addEventListener('click', event => {
+  const button = event.target.closest('[data-ext]');
+  if (button) { const r = button.getBoundingClientRect(); send('ext.popup', { id: button.dataset.ext, x: Math.round(r.left), y: Math.round(r.bottom + 4) }); return; }
+  if (event.target.closest('[data-store]') && !exts.busy) send('ext.storeInstall');
+});
+function renderExtensionSettings() {
+  const data = exts.settings;
+  if (!data) return;
+  $('#extProfile').innerHTML = prof.items.map(p => `<option value="${escapeHtml(p.id)}"${p.id === data.profile ? ' selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+  $('#extList').innerHTML = data.items.length === 0 ? '<div class="empty">이 프로필에 설치한 확장 프로그램이 없습니다.</div>'
+    : data.items.map(e => `<div class="ext-row" data-ext="${escapeHtml(e.id)}">`
+      + (e.icon ? `<img src="${escapeHtml(e.icon)}" alt="">` : '<span class="noicon"></span>')
+      + `<div class="lbl"><b>${escapeHtml(e.name)}</b><span>${escapeHtml(e.version ? 'v' + e.version + ' · ' : '')}${escapeHtml(e.id)}</span></div>`
+      + (e.options ? '<button class="st-btn" data-op="options">옵션</button>' : '')
+      + '<button class="st-btn danger" data-op="remove">삭제</button>'
+      + `<label class="sw" title="켜기/끄기"><input type="checkbox" data-op="toggle"${e.enabled ? ' checked' : ''}><i></i></label></div>`).join('');
+  $('#extSource').innerHTML = data.sources.length === 0 ? '<option value="">Chrome·Edge 프로필을 찾지 못했습니다</option>'
+    : data.sources.map(s => `<option value="${escapeHtml(s.source)}"${s.source === data.source ? ' selected' : ''}>${escapeHtml(s.label)}</option>`).join('');
+  $('#extImport').disabled = data.sources.length === 0;
+}
+$('#extProfile').addEventListener('change', event => send('ext.list', { profile: event.target.value }));
+$('#extList').addEventListener('click', event => {
+  const row = event.target.closest('[data-ext]'), button = event.target.closest('[data-op]');
+  if (!row || !button || button.dataset.op === 'toggle') return;
+  const id = row.dataset.ext, profile = exts.settings.profile;
+  if (button.dataset.op === 'options') send('ext.options', { profile, id });
+  else if (button.dataset.op === 'remove') arm(button, 'ext/' + id, () => send('ext.remove', { profile, id }));
+});
+$('#extList').addEventListener('change', event => {
+  if (!event.target.matches('[data-op="toggle"]')) return;
+  send('ext.toggle', { profile: exts.settings.profile, id: event.target.closest('[data-ext]').dataset.ext, enabled: event.target.checked });
+});
+$('#extInstall').addEventListener('click', () => {
+  const text = $('#extStore').value.trim();
+  if (!text) return;
+  send('ext.install', { profile: exts.settings?.profile, text });
+  $('#extStore').value = '';
+});
+$('#extStore').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); $('#extInstall').click(); } });
+$('#extImport').addEventListener('click', () => send('ext.import', { profile: exts.settings?.profile, source: $('#extSource').value }));
 function renderSetup(state) {
   $('#setupDefault').textContent = state.isDefault ? 'pluck이 기본 브라우저입니다. 다른 앱에서 누른 링크가 pluck에서 열립니다.'
     : '다른 앱에서 누른 링크를 pluck에서 엽니다. 누르면 Windows 설정이 열리니 pluck을 골라 주세요.';
@@ -3536,6 +3623,9 @@ webview?.addEventListener('message', event => {
   else if (message.type === 'acct.error') showNote(message.text, true);
   else if (message.type === 'settings.close') closeSettings();
   else if (message.type === 'setup.state') renderSetup(message);
+  else if (message.type === 'extensions') { exts.profile = message.profile; exts.items = message.items; renderExtensions(); }
+  else if (message.type === 'extensions.busy') { exts.busy = message.busy; renderExtensions(); }
+  else if (message.type === 'extensions.settings') { exts.settings = message; renderExtensionSettings(); }
   else if (message.type === 'schedules') { sched.items = message.items; $('#schedStartup').checked = !!message.startup; renderSchedules(); }
   else if (message.type === 'profiles') { prof.items = message.items; prof.current = message.current; renderProfiles(); }
   else if (message.type === 'toast') showToast(message.text);

@@ -159,3 +159,14 @@
 # 탭 전환 포커스: 페이지 첫 링크(「바로가기」)에 포커스 링 (PageView)
 - 함정: TabControl 탭을 바꾸면 WinForms가 새 페이지 첫 컨트롤을 Tab 이동처럼 `Select(directed: true)` → WebView2가 `_lastMoveFocusReason = Next`로 기억했다가 페이지 안에 Tab을 넣음 → 네이버 「상단영역 바로가기」 같은 skip link가 :focus-visible로 뜬다.
 - 해결: 탭 WebView는 `PageView`(WebView2 하위 클래스)로 만들고, 실제 Tab 키가 눌려 있을 때만 directed로 넘긴다. 탭 WebView를 새로 만들 때 `new WebView2` 대신 `PageView`를 써야 한다.
+
+# 크롬 확장 프로그램 (BrowserExtensions.cs): WebView2 browser extensions
+## WHY / 설계
+- `CoreWebView2EnvironmentOptions.AreBrowserExtensionsEnabled = true`. 확장은 WebView2 프로필 단위 → pluck 프로필(작업공간)마다 따로. 설치 API는 `CoreWebView2Profile`에만 있어서, 열린 탭이 없는 프로필은 숨긴 컨트롤러를 잠깐 만들어 쓴다(`WithProfileAsync`).
+- WebView2는 압축 풀린 폴더를 계속 참조 → `dataDir\extensions\<id>\<version>`에 복사본 유지. 크롬 웹 스토어 버튼·툴바·팝업이 없으므로 pluck이 직접: 스토어 CRX를 clients2.google.com에서 받아 CRX3 헤더(protobuf)에서 공개키를 꺼내 manifest `key`로 넣는다(→ 스토어와 같은 ID 유지). 사이드바 주소창 아래 `#exts` 버튼, 팝업은 테두리 없는 Form + WebView2(같은 프로필)로 `chrome-extension://<id>/<popup>`.
+- 크롬에서 가져오기: `<User Data>\<프로필>\Extensions\<id>\<ver>`(이미 key 포함). `Secure Preferences`/`Preferences`의 extensions.settings로 기본 설치(was_installed_by_default)·내장(location 5,10)·꺼둔 것(disable_reasons) 제외. 테마·앱 제외.
+## 함정
+- `_metadata` 등 `_`로 시작하는 폴더가 있으면 압축 해제 확장 로드가 거부됨 → 복사할 때 `_locales` 빼고 삭제.
+- WebView2 기본 내장 확장(Edge PDF Viewer, Clipboard)이 목록에 섞여 나옴 → pluck 저장소에 폴더가 있는 것만 보여 준다.
+- 팝업 창을 Opacity로 숨기면(레이어드 창) WebView가 안 그려짐 → 화면 밖(-32000)에 띄웠다가 크기를 잰 뒤 옮긴다.
+- 팝업은 Chrome의 "현재 탭" 개념이 없어 chrome.tabs로 현재 페이지를 읽는 확장(예: Dark Reader 팝업의 사이트 표시)은 페이지를 모른다. 페이지에 주입되는 content script는 정상 동작.
