@@ -1,5 +1,5 @@
 ---
-name: pluck-table-extract
+name: oinzi-table-extract
 description: 지금 보고 있는 페이지나 지정한 페이지의 표·목록을 CSV/엑셀로 저장한다. 여러 페이지에 걸친 목록도 넘겨 가며 모은다. "이 표 엑셀로", "목록 뽑아줘", "데이터 추출해줘", "CSV로 저장" 같은 요청에 쓴다.
 ---
 

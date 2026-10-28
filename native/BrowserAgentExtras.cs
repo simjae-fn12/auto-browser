@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // Smaller agent commands: a status line for the overview, screenshot comparison and running several commands at once.
 public sealed partial class BrowserForm
@@ -42,7 +42,7 @@ public sealed partial class BrowserForm
         return new { ok = true, results };
     }
 
-    // Compares the tab's current screen with a baseline PNG the agent sends. Images travel as base64, so pluck never
+    // Compares the tab's current screen with a baseline PNG the agent sends. Images travel as base64, so Oinzi never
     // reads or writes files on an agent's behalf.
     private static async Task<object> CompareAsync(Microsoft.Web.WebView2.Core.CoreWebView2 core, string baseline, double threshold, bool wantDiff)
     {

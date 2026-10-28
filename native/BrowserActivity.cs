@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 public sealed partial class BrowserForm
 {
@@ -31,7 +31,7 @@ public sealed partial class BrowserForm
         // The done call still runs so an overlay shown before the setting was turned off gets removed.
         if (!prefs.AgentOverlay && !done) return;
         var label = done ? "브라우저 조작 완료" : ActivityLabel(command);
-        var script = ReadResource("activity.js") + "\nwindow.__pluckActivity(" + JsonSerializer.Serialize(label) + ","
+        var script = ReadResource("activity.js") + "\nwindow.__oinziActivity(" + JsonSerializer.Serialize(label) + ","
             + JsonSerializer.Serialize(target) + "," + (done ? "true" : "false") + "," + JsonSerializer.Serialize(command) + ")";
         try
         {

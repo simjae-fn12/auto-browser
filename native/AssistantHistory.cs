@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 public sealed partial class BrowserForm
 {

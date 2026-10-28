@@ -1,4 +1,4 @@
-// Drives a real pluck build: pages must see trusted input events, and snapshots must carry roles, states and diffs.
+// Drives a real Oinzi build: pages must see trusted input events, and snapshots must carry roles, states and diffs.
 // Build first: dotnet build native/native.csproj -c Debug. Runs against a private data folder, not your profile.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +10,7 @@ import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 
 const root = path.resolve(import.meta.dirname, '..');
-const exe = path.join(root, 'native', 'bin', 'Debug', 'net10.0-windows', 'pluck.exe');
+const exe = path.join(root, 'native', 'bin', 'Debug', 'net10.0-windows', 'oinzi.exe');
 const fixtures = path.join(root, 'tests', 'fixtures');
 
 async function start(t) {
@@ -21,8 +21,8 @@ async function start(t) {
     } catch { res.writeHead(404).end(); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const data = await fs.mkdtemp(path.join(os.tmpdir(), 'pluck-input-'));
-  const app = spawn(exe, [], { env: { ...process.env, PLUCK_NATIVE_DATA_DIR: data }, stdio: 'ignore' });
+  const data = await fs.mkdtemp(path.join(os.tmpdir(), 'Oinzi-input-'));
+  const app = spawn(exe, [], { env: { ...process.env, OINZI_DATA_DIR: data }, stdio: 'ignore' });
   const connection = path.join(data, 'connection.json');
   for (let i = 0; i < 60; i++) {
     try { await fs.access(connection); break; } catch { await new Promise(r => setTimeout(r, 500)); }
@@ -39,7 +39,7 @@ async function start(t) {
 function runAgent(connection, source) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(root, 'native', 'agent.mjs')], {
-      env: { ...process.env, PLUCK_NATIVE_CONNECTION: connection }, stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, OINZI_CONNECTION: connection }, stdio: ['pipe', 'pipe', 'pipe'],
     });
     let out = '', err = '';
     child.stdout.on('data', d => { out += d; });
@@ -98,7 +98,7 @@ test('agent input is trusted and snapshots describe controls', { skip: !(await f
 test('MCP server lists tools and drives a tab', { skip: !(await fs.access(exe).then(() => true, () => false)) && 'build native first' }, async t => {
   const { url, connection } = await start(t);
   const child = spawn(process.execPath, [path.join(root, 'native', 'mcp.mjs')], {
-    env: { ...process.env, PLUCK_NATIVE_CONNECTION: connection }, stdio: ['pipe', 'pipe', 'inherit'],
+    env: { ...process.env, OINZI_CONNECTION: connection }, stdio: ['pipe', 'pipe', 'inherit'],
   });
   const waiting = new Map(); let n = 0;
   readline.createInterface({ input: child.stdout }).on('line', line => { const m = JSON.parse(line); waiting.get(m.id)?.(m); });
@@ -108,7 +108,7 @@ test('MCP server lists tools and drives a tab', { skip: !(await fs.access(exe).t
   });
   const call = async (name, args) => (await rpc('tools/call', { name, arguments: args })).result;
   const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
-  assert.equal(init.result.serverInfo.name, 'pluck');
+  assert.equal(init.result.serverInfo.name, 'oinzi');
   const names = (await rpc('tools/list', {})).result.tools.map(tool => tool.name);
   for (const name of ['open', 'snapshot', 'click', 'fill', 'press', 'screenshot']) assert.ok(names.includes(name), name);
   const id = JSON.parse((await call('open', { url })).content[0].text).id;

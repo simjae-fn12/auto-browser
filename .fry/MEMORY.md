@@ -17,17 +17,17 @@
 - `.send` 클래스는 `margin-left:auto`를 쓴다. 중지 버튼과 전송 버튼이 함께 보이면 auto 여백이 둘로 나뉘어 중지 버튼이 가운데로 간다. 그래서 `#aiStop + #aiSend { margin-left: 0 }`가 필요하다.
 - 함정: 이미 포커스가 있는 chromeView에 `Focus()`를 다시 걸면 chrome 문서에 잠깐 blur가 생긴다. 팔레트는 window blur가 오면 닫히므로, 마우스로 새 탭을 누를 때마다 바로 닫혔다. 그래서 `frozen`에서는 `ContainsFocus`가 아닐 때만 Focus를 건다.
 
-# 테스트: 실행 중인 pluck을 건드리지 않고 검증
-- `PLUCK_NATIVE_DATA_DIR=<임시폴더>`로 Debug 빌드를 따로 띄우고, `PLUCK_NATIVE_CONNECTION=<임시폴더>/connection.json`을 지정해 `node agent.mjs <스크립트>`를 실행한다.
+# 테스트: 실행 중인 Oinzi를 건드리지 않고 검증
+- `OINZI_DATA_DIR=<임시폴더>`로 Debug 빌드를 따로 띄우고, `OINZI_CONNECTION=<임시폴더>/connection.json`을 지정해 `node agent.mjs <스크립트>`를 실행한다.
 - 테스트 스크립트는 `const b = await browser.session("이름")`으로 받은 `b.open/goto/js/snapshot`을 쓴다. `browser.open`은 없다.
 - `goto`에 `data:` URL을 넣으면 "Navigation failed"가 난다. 로컬 http 서버를 띄워서 테스트한다.
 
-# 사용자 파일 폴더: 문서\pluck (녹화·AI 작업·스크린샷)
+# 사용자 파일 폴더: 문서\Oinzi (녹화·AI 작업·스크린샷)
 
 ## WHY: 보이는 결과물과 숨길 데이터를 분리
-- `문서\pluck\{녹화, AI 작업, 스크린샷}`은 시작할 때 만든다. pluck은 설치 프로그램이 없는 단일 exe라 "설치 시" 단계가 없다. 이 폴더에는 사람이 직접 열어 볼 결과물만 둔다.
-- 프로필(로그인), 대화 기록, 녹화 원본 프레임은 `%APPDATA%\pluck-windows-native`에 남긴다. 문서 폴더는 OneDrive로 동기화될 수 있고, 녹화 원본에는 화면에 보인 계정 정보가 그대로 담기기 때문이다.
-- 녹화는 원본이 JPEG 프레임과 `meta.json`이고, 개요(Ctrl+Shift+O) → 녹화 탭에서 재생한다. "동영상으로 저장"은 WebM을 만들며 기본 저장 위치가 `문서\pluck\녹화`다.
+- `문서\Oinzi\{녹화, AI 작업, 스크린샷}`은 시작할 때 만든다. Oinzi는 설치 프로그램이 없는 단일 exe라 "설치 시" 단계가 없다. 이 폴더에는 사람이 직접 열어 볼 결과물만 둔다.
+- 프로필(로그인), 대화 기록, 녹화 원본 프레임은 `%APPDATA%\Oinzi`에 남긴다. 문서 폴더는 OneDrive로 동기화될 수 있고, 녹화 원본에는 화면에 보인 계정 정보가 그대로 담기기 때문이다.
+- 녹화는 원본이 JPEG 프레임과 `meta.json`이고, 개요(Ctrl+Shift+O) → 녹화 탭에서 재생한다. "동영상으로 저장"은 WebM을 만들며 기본 저장 위치가 `문서\Oinzi\녹화`다.
 
 ## 함정: AI 기본 작업 폴더를 바꾸면 Claude 세션이 이어지지 않음
 - `chat.Cwd`가 null이면 기본 작업 폴더로 `AI 작업`을 쓴다. agent.mjs와 `runs\`는 여전히 내부 workspace에 있다. Claude에는 `--add-dir`, Codex에는 `writableRoots`로 그 경로를 열어 준다.
@@ -37,7 +37,7 @@
 
 ## 흐름
 - 녹화 원본은 0.25초 간격으로 찍은 JPEG 프레임이다. 화면이 바뀌지 않은 프레임은 저장하지 않는다.
-- 녹화를 멈추면 `EncodeAndPostAsync`가 ffmpeg로 `문서\pluck\녹화\<날짜 시간> <제목>.mp4`를 만든다. 플레이어의 "MP4로 저장" 버튼(`rec.video` 메시지)도 같은 경로를 쓰고, 버튼으로 만들었을 때는 탐색기에서 파일을 선택해 보여 준다.
+- 녹화를 멈추면 `EncodeAndPostAsync`가 ffmpeg로 `문서\Oinzi\녹화\<날짜 시간> <제목>.mp4`를 만든다. 플레이어의 "MP4로 저장" 버튼(`rec.video` 메시지)도 같은 경로를 쓰고, 버튼으로 만들었을 때는 탐색기에서 파일을 선택해 보여 준다.
 - 앱을 종료할 때(`StopAllRecordings`)는 인코딩하지 않는다. ffmpeg가 끝나기 전에 앱이 꺼지면 파일을 옮기지 못하기 때문이다. 이런 녹화는 나중에 버튼으로 만든다.
 - ffmpeg가 없으면 예전 방식(캔버스 + MediaRecorder로 WebM 만들기, 실제 재생 시간만큼 걸림)으로 돌아간다.
 
@@ -48,14 +48,14 @@
 - concat 목록의 마지막 파일은 한 번 더 적어야 마지막 프레임의 duration이 적용된다.
 
 # AI 패널 하단 메뉴 (Aside 참고, 그대로 베끼지 않음)
-- 사용자 선호: 설정은 서랍이나 select 대신 팝업 메뉴로 보여 준다. 입력창 왼쪽 `+`(사진 첨부·현재 탭·작업 폴더), 하단 왼쪽 권한 🛡·폴더 📁, 하단 오른쪽 모델(엔진 선택 포함, 모델이 많으면 검색)과 추론(따라보기 스위치 포함)이다. 저작권 문제가 없도록 문구·아이콘·색은 pluck 것으로 쓴다.
+- 사용자 선호: 설정은 서랍이나 select 대신 팝업 메뉴로 보여 준다. 입력창 왼쪽 `+`(사진 첨부·현재 탭·작업 폴더), 하단 왼쪽 권한 🛡·폴더 📁, 하단 오른쪽 모델(엔진 선택 포함, 모델이 많으면 검색)과 추론(따라보기 스위치 포함)이다. 저작권 문제가 없도록 문구·아이콘·색은 Oinzi 것으로 쓴다.
 - 숨겨진 `.aset` 안의 select와 버튼(`#aiModel/#aiEffort/#aiMode/#aiFolder/#aiFolderClear/#aiFollow`)이 실제 값을 가진다. 메뉴는 이 값을 읽고 바꾼 뒤 `change` 이벤트를 보내 기존 `ai.setting` 전송 로직을 그대로 쓴다. `.seg`(엔진 전환)도 숨긴 채 남겨 두고 모델 메뉴에서 클릭한다.
 - `[hidden]`은 `display:flex` 같은 CSS에 덮이므로, 숨길 수 있는 요소에는 `X[hidden]{display:none}`이 필요하다.
 
 # 내장 스킬 (native/skills → .claude/skills)
-- `native/skills/<이름>/SKILL.md`는 EmbeddedResource(`skills/<이름>\SKILL.md`)로 넣는다. 실행할 때 내부 workspace와 `문서\pluck\AI 작업`의 `.claude\skills`에 써 둔다. 사용자가 고른 다른 폴더와 `~/.claude`에는 쓰지 않는다(사용자 선택: "pluck 안에만").
+- `native/skills/<이름>/SKILL.md`는 EmbeddedResource(`skills/<이름>\SKILL.md`)로 넣는다. 실행할 때 내부 workspace와 `문서\Oinzi\AI 작업`의 `.claude\skills`에 써 둔다. 사용자가 고른 다른 폴더와 `~/.claude`에는 쓰지 않는다(사용자 선택: "Oinzi 안에만").
 - Codex는 `.claude/skills`를 자동으로 읽지 않으므로 INSTRUCTIONS.md의 `{{SKILLS}}` 경로 안내로 SKILL.md를 읽게 한다. 제한 모드의 Claude 허용 도구에 `Skill`을 추가했다.
-- 블로그 스킬의 핵심 주의점: pluck은 beforeunload를 자동으로 확인 처리하므로 페이지를 벗어나기 전에 반드시 임시저장해야 한다. 발행은 사람이 허락했을 때만 한다.
+- 블로그 스킬의 핵심 주의점: Oinzi는 beforeunload를 자동으로 확인 처리하므로 페이지를 벗어나기 전에 반드시 임시저장해야 한다. 발행은 사람이 허락했을 때만 한다.
 
 
 # 에이전트 입력: DevTools 신뢰 이벤트 (BrowserInput.cs)
@@ -77,11 +77,11 @@
 
 # 스냅샷 diff, MCP 서버
 - 참조 번호는 스냅샷마다 새로 매겨진다. 그래서 diff는 (프레임, role, 이름, href, value, state에서 focused를 뺀 값)을 키로 비교한다. 주소가 바뀌면 비교하지 않고 전체를 돌려준다.
-- `mcp.mjs`는 의존성이 없다. 시작할 때 `%APPDATA%\pluck-windows-native\mcp.mjs`에 써 둔다. 다른 에이전트 설정은 자동으로 고치지 않는다. ego가 Codex 규칙과 `~/.claude/skills`를 몰래 바꾸는 것을 반면교사로 삼은 결정이다. 프로세스 하나가 세션 하나이고, 종료할 때 cleanup-run을 한다.
+- `mcp.mjs`는 의존성이 없다. 시작할 때 `%APPDATA%\Oinzi\mcp.mjs`에 써 둔다. 다른 에이전트 설정은 자동으로 고치지 않는다. ego가 Codex 규칙과 `~/.claude/skills`를 몰래 바꾸는 것을 반면교사로 삼은 결정이다. 프로세스 하나가 세션 하나이고, 종료할 때 cleanup-run을 한다.
 
 # AI 작업 오버레이(activity.js)와 패널 모션
-- pluck 고유 디자인이다(ego는 수치와 원리만 참고). 씨앗 마크, 오로라 테두리, 모서리 괄호와 동작 칩, pluck 커서와 이중 파동, 읽기 스캔으로 구성된다. 색은 `--ai #7462ee`, 민트, 꽃잎 분홍이다.
-- `__pluckActivity(label, target, done, command)`에 네 번째 인자로 명령을 넘겨 동작 칩과 연출을 고른다. `version` 값이 다르면 기존 페이지의 오버레이를 교체한다.
+- Oinzi 고유 디자인이다(ego는 수치와 원리만 참고). 씨앗 마크, 오로라 테두리, 모서리 괄호와 동작 칩, Oinzi 커서와 이중 파동, 읽기 스캔으로 구성된다. 색은 `--ai #7462ee`, 민트, 꽃잎 분홍이다.
+- `__oinziActivity(label, target, done, command)`에 네 번째 인자로 명령을 넘겨 동작 칩과 연출을 고른다. `version` 값이 다르면 기존 페이지의 오버레이를 교체한다.
 - 함정:
   - shadow root 안의 `@property`는 등록되지 않는다. 회전하는 conic 레이어를 ring mask 안에 넣어 해결했다.
   - 백그라운드(숨은) 탭에서는 `requestAnimationFrame`이 실행되지 않는다. 등장 애니메이션은 `void el.offsetWidth`로 강제 reflow한 뒤 클래스를 붙인다.
@@ -116,9 +116,9 @@
 
 ## WHY / 설계
 - 사용자는 Chrome 프로필을 수십 개 쓰고 자동화할 때 사이트마다 계정이 많다. 그래서 프로필(쿠키 분리)과 프로필별 계정 금고를 둘 다 만들었다. 사용자가 이 방식을 골랐다.
-- AI는 비밀번호를 절대 받지 않는다. `login(tabId, credential)`을 부르면 pluck이 직접 입력한다. 입력하기 전에 두 가지를 확인한다. 로그인 칸이 있는 문서의 `location.hostname`이 저장된 사이트와 같은지(또는 하위 도메인인지), 탭 프로필이 계정 프로필과 같은지다. 프롬프트 인젝션으로 다른 사이트에 비밀번호를 입력하게 만드는 것을 막기 위해서다.
+- AI는 비밀번호를 절대 받지 않는다. `login(tabId, credential)`을 부르면 Oinzi가 직접 입력한다. 입력하기 전에 두 가지를 확인한다. 로그인 칸이 있는 문서의 `location.hostname`이 저장된 사이트와 같은지(또는 하위 도메인인지), 탭 프로필이 계정 프로필과 같은지다. 프롬프트 인젝션으로 다른 사이트에 비밀번호를 입력하게 만드는 것을 막기 위해서다.
 - 프로필 = 작업공간(사용자 선택, 외주 프로젝트별 계정 분리 용도). 사이드바 「열린 탭」·Ctrl+Tab·Ctrl+1~9는 `userProfile`의 탭만 다룬다(`InWorkspace`). AI 세션 탭은 프로필과 무관하게 모두 보인다. `userProfile`은 사람이 보는 탭을 따라간다(`SelectedIndexChanged` → `FollowWorkspace`). 그래서 다른 프로필 탭이 선택되면 작업공간도 바뀐다. 프로필을 고르면(`prof.use`) 그 프로필에서 마지막으로 본 탭이 열리고, 탭이 없으면 홈 탭을 하나 만든다. 로그인 유지는 WebView2 프로필별 쿠키가 담당한다.
-- AI 세션마다 프로필이 하나씩 있다(`AgentSession.Profile`). 이유: 여러 세션이 서로 다른 계정으로 동시에 일하게 하려고(예: 터미널은 pluck 계정, 패널은 caryoung 계정). `open`에 profile이 없으면 세션 프로필을 쓴다. 새 세션은 만들 때의 `userProfile`을 쓰고, 터미널은 `--profile`이나 `PLUCK_PROFILE`로 정한다(`session` 명령의 profile). 패널 대화는 처음 실행할 때 `Conversation.Profile`로 고정된다. 패널 자식 프로세스에서는 `PLUCK_PROFILE`을 지운다. 지우지 않으면 사용자 터미널 값이 대화 프로필을 덮어쓴다. tabs.json의 sessions에도 profile을 저장한다.
+- AI 세션마다 프로필이 하나씩 있다(`AgentSession.Profile`). 이유: 여러 세션이 서로 다른 계정으로 동시에 일하게 하려고(예: 터미널은 Oinzi 계정, 패널은 caryoung 계정). `open`에 profile이 없으면 세션 프로필을 쓴다. 새 세션은 만들 때의 `userProfile`을 쓰고, 터미널은 `--profile`이나 `OINZI_PROFILE`로 정한다(`session` 명령의 profile). 패널 대화는 처음 실행할 때 `Conversation.Profile`로 고정된다. 패널 자식 프로세스에서는 `OINZI_PROFILE`을 지운다. 지우지 않으면 사용자 터미널 값이 대화 프로필을 덮어쓴다. tabs.json의 sessions에도 profile을 저장한다.
 - 세션 개요(Ctrl+Shift+O)는 사람 탭을 프로필마다 카드 하나로 나눈다(space `user:<프로필id>`, 누르면 `SwitchWorkspace`). 녹화는 그대로 `user` 하나다(지금 보는 탭을 녹화한다).
 - Chrome에서 가져온 것: 프로필 이름과 구글 이메일만 가져와 메모에 `구글: 이메일`로 적었다. 쿠키와 비밀번호는 Chrome 앱 전용 암호화를 우회해야 해서 가져오지 않는다. 비밀번호는 사용자가 직접 내보낸 CSV로만 가져온다(`cred.import` → `ImportPasswordCsv`). 파일 선택 창은 C#에서 띄우고, CSV 내용은 chrome 페이지로 보내지 않는다. 가져온 뒤에는 CSV를 지울지 묻는다.
 - 테스트 함정: 이 PC는 한글 IME가 켜져 있어서 SendKeys로 경로를 입력하면 한글 자모로 들어간다. 파일 선택 창 자동화는 포기하고 로직만 리플렉션으로 검증했다.
@@ -140,7 +140,7 @@
 - 예약 실행은 `new Conversation`을 직접 만든다. `NewConversation()`은 그 대화를 선택해 버려서, 사용자가 패널에서 보던 대화가 바뀐다. 실행이 끝나는 시점은 `PostAssistant`의 "done"에서 `FinishScheduleRun`으로 잡는다. `scheduleRuns`(대화 id → 예약)로 짝을 짓는다.
 - 다음 실행 시각은 `NextRun(LastRun ?? Created)`이다. 예약을 수정하거나 켜면 LastRun을 지금으로 바꾼다. 그래야 바꾼 시각이 "놓친 실행"으로 처리돼 곧바로 실행되지 않는다. 시작할 때 놓친 실행 확인은 대화 기록이 로드된 뒤(5초 뒤)에 한다.
 - 요소 고르기는 CDP `Runtime.evaluate(awaitPromise)`로 페이지 안의 Promise가 끝날 때까지 기다린다(클릭하거나 Esc, 최대 2분). 페이지 클릭은 capture 단계에서 막아서 실제로 눌리지 않는다.
-- `compare`는 이미지를 base64로 주고받는다. pluck이 에이전트의 경로를 대신 읽거나 쓰면 Claude 제한 모드의 샌드박스를 우회하게 되기 때문이다. GDI+ Bitmap은 스트림이 닫히면 깨지므로 픽셀을 복사해 둔다.
+- `compare`는 이미지를 base64로 주고받는다. Oinzi가 에이전트의 경로를 대신 읽거나 쓰면 Claude 제한 모드의 샌드박스를 우회하게 되기 때문이다. GDI+ Bitmap은 스트림이 닫히면 깨지므로 픽셀을 복사해 둔다.
 - 계정 사용량 바로 조회(OAuth usage API)는 넣지 않았다. 로그인 토큰을 비공개 엔드포인트로 보내야 해서다. 다른 브라우저 쿠키 가져오기도 하지 않는다. Chrome·Edge의 v20 앱 전용 암호화는 다른 프로그램이 읽지 못하게 하려는 보호 장치다.
 
 # 시작하기: Chrome·Edge 프로필 가져오기 · 기본 브라우저 · 링크 넘겨받기 (BrowserSetup.cs)
@@ -148,13 +148,13 @@
 ## WHY / 설계
 - 다른 브라우저에서 읽는 건 `Local State`의 `profile.info_cache`(프로필 이름·계정 이메일)뿐. 쿠키·비밀번호는 v20 앱 바인딩 암호화라 우회하지 않는다 → 비밀번호는 「비밀번호 내보내기」(그 브라우저 프로필로 `--profile-directory=… chrome://password-manager/settings` 실행) → 받은 CSV를 「CSV 가져오기」.
 - `BrowserProfile.Source = "chrome:Profile 3"`. 같은 이메일은 Chrome·Edge 어디서 왔든 프로필 하나(노트에 이메일이 있으면 가져온 것으로 침). Source 이전에 스크립트로 가져온 프로필은 `LinkBrowserProfiles()`가 시작할 때 이메일로 Source를 채운다.
-- 기본 브라우저는 Windows가 사용자만 바꿀 수 있게 막아 둠 → HKCU에 후보로 등록(`StartMenuInternet\pluck`, `RegisteredApplications`, ProgId `pluckURL`/`pluckHTML`) 후 `ms-settings:defaultapps?registeredAppUser=pluck`를 연다. 현재 기본 여부는 `UrlAssociations\https\UserChoice` ProgId로 판단.
+- 기본 브라우저는 Windows가 사용자만 바꿀 수 있게 막아 둠 → HKCU에 후보로 등록(`StartMenuInternet\Oinzi`, `RegisteredApplications`, ProgId `OinziURL`/`OinziHTML`) 후 `ms-settings:defaultapps?registeredAppUser=Oinzi`를 연다. 현재 기본 여부는 `UrlAssociations\https\UserChoice` ProgId로 판단.
 - 첫 실행(`prefs.SetupOffered == false`)에 할 일이 있으면 설정 「시작하기」를 한 번 자동으로 연다.
 
-## 흐름: 한 데이터 폴더에 pluck 하나
-- `Program.Main`: 데이터 폴더 경로 해시로 만든 Mutex `Local\pluck-<hash>`. 이미 있으면 같은 이름 파이프로 링크(JSON 배열)를 넘기고 종료. 넘기기에 실패하면(닫히는 중) Mutex를 15초 기다렸다가 직접 실행.
+## 흐름: 한 데이터 폴더에 Oinzi 하나
+- `Program.Main`: 데이터 폴더 경로 해시로 만든 Mutex `Local\oinzi-<hash>`. 이미 있으면 같은 이름 파이프로 링크(JSON 배열)를 넘기고 종료. 넘기기에 실패하면(닫히는 중) Mutex를 15초 기다렸다가 직접 실행.
 - 받는 쪽 `ListenForLinks`는 초기화 초반에 시작하고, 탭 복원 전 도착한 링크는 `LaunchLinks`에 쌓았다가 복원 뒤 연다.
-- 함정: 테스트 인스턴스(PLUCK_NATIVE_DATA_DIR)는 다른 해시라 실제 pluck과 안 부딪힌다. 등록된 exe 경로는 그 파일이 없어졌을 때만 다시 쓴다(디버그 빌드가 기본 브라우저 등록을 가로채지 않게). node의 execFileSync로 env를 넘기면 다른 데이터 폴더로 떠서 넘기기 테스트가 틀어졌음 → PowerShell Start-Process로 테스트.
+- 함정: 테스트 인스턴스(OINZI_DATA_DIR)는 다른 해시라 실제 Oinzi와 안 부딪힌다. 등록된 exe 경로는 그 파일이 없어졌을 때만 다시 쓴다(디버그 빌드가 기본 브라우저 등록을 가로채지 않게). node의 execFileSync로 env를 넘기면 다른 데이터 폴더로 떠서 넘기기 테스트가 틀어졌음 → PowerShell Start-Process로 테스트.
 
 # 탭 전환 포커스: 페이지 첫 링크(「바로가기」)에 포커스 링 (PageView)
 - 함정: TabControl 탭을 바꾸면 WinForms가 새 페이지 첫 컨트롤을 Tab 이동처럼 `Select(directed: true)` → WebView2가 `_lastMoveFocusReason = Next`로 기억했다가 페이지 안에 Tab을 넣음 → 네이버 「상단영역 바로가기」 같은 skip link가 :focus-visible로 뜬다.
@@ -162,17 +162,17 @@
 
 # 크롬 확장 프로그램 (BrowserExtensions.cs): WebView2 browser extensions
 ## WHY / 설계
-- `CoreWebView2EnvironmentOptions.AreBrowserExtensionsEnabled = true`. 확장은 WebView2 프로필 단위 → pluck 프로필(작업공간)마다 따로. 설치 API는 `CoreWebView2Profile`에만 있어서, 열린 탭이 없는 프로필은 숨긴 컨트롤러를 잠깐 만들어 쓴다(`WithProfileAsync`).
-- WebView2는 압축 풀린 폴더를 계속 참조 → `dataDir\extensions\<id>\<version>`에 복사본 유지. 크롬 웹 스토어 버튼·툴바·팝업이 없으므로 pluck이 직접: 스토어 CRX를 clients2.google.com에서 받아 CRX3 헤더(protobuf)에서 공개키를 꺼내 manifest `key`로 넣는다(→ 스토어와 같은 ID 유지). 사이드바 주소창 아래 `#exts` 버튼, 팝업은 테두리 없는 Form + WebView2(같은 프로필)로 `chrome-extension://<id>/<popup>`.
+- `CoreWebView2EnvironmentOptions.AreBrowserExtensionsEnabled = true`. 확장은 WebView2 프로필 단위 → Oinzi 프로필(작업공간)마다 따로. 설치 API는 `CoreWebView2Profile`에만 있어서, 열린 탭이 없는 프로필은 숨긴 컨트롤러를 잠깐 만들어 쓴다(`WithProfileAsync`).
+- WebView2는 압축 풀린 폴더를 계속 참조 → `dataDir\extensions\<id>\<version>`에 복사본 유지. 크롬 웹 스토어 버튼·툴바·팝업이 없으므로 Oinzi가 직접: 스토어 CRX를 clients2.google.com에서 받아 CRX3 헤더(protobuf)에서 공개키를 꺼내 manifest `key`로 넣는다(→ 스토어와 같은 ID 유지). 사이드바 주소창 아래 `#exts` 버튼, 팝업은 테두리 없는 Form + WebView2(같은 프로필)로 `chrome-extension://<id>/<popup>`.
 - 크롬에서 가져오기: `<User Data>\<프로필>\Extensions\<id>\<ver>`(이미 key 포함). `Secure Preferences`/`Preferences`의 extensions.settings로 기본 설치(was_installed_by_default)·내장(location 5,10)·꺼둔 것(disable_reasons) 제외. 테마·앱 제외.
 ## 함정
 - `_metadata` 등 `_`로 시작하는 폴더가 있으면 압축 해제 확장 로드가 거부됨 → 복사할 때 `_locales` 빼고 삭제.
-- WebView2 기본 내장 확장(Edge PDF Viewer, Clipboard)이 목록에 섞여 나옴 → pluck 저장소에 폴더가 있는 것만 보여 준다.
+- WebView2 기본 내장 확장(Edge PDF Viewer, Clipboard)이 목록에 섞여 나옴 → Oinzi 저장소에 폴더가 있는 것만 보여 준다.
 - 팝업 창을 Opacity로 숨기면(레이어드 창) WebView가 안 그려짐 → 화면 밖(-32000)에 띄웠다가 크기를 잰 뒤 옮긴다.
 - 팝업은 Chrome의 "현재 탭" 개념이 없어 chrome.tabs로 현재 페이지를 읽는 확장(예: Dark Reader 팝업의 사이트 표시)은 페이지를 모른다. 페이지에 주입되는 content script는 정상 동작.
 
 # 배포: 설치 파일(Inno Setup) · AI 도구 설치 (native/installer, BrowserSetup.cs)
-- `native/installer/build.ps1` → self-contained publish(`publish-installer`) → ISCC → `native/dist/pluck-setup-<ver>.exe`(약 35MB). 버전은 native.csproj `<Version>`. Inno Setup 6 필요(`winget install JRSoftware.InnoSetup`, 사용자 범위 설치면 `%LOCALAPPDATA%\Programs\Inno Setup 6`).
-- 사용자별 설치(관리자 권한 X) `%LOCALAPPDATA%\Programs\pluck`. 데이터는 `%APPDATA%\pluck-windows-native` 그대로라 제거해도 남는다. 제거 마지막에 `pluck.exe --unregister`가 기본 브라우저 등록·시작 프로그램 항목을 지운다(Mutex보다 먼저 처리).
+- `native/installer/build.ps1` → self-contained publish(`publish-installer`) → ISCC → `native/dist/oinzi-setup-<ver>.exe`(약 35MB). 버전은 native.csproj `<Version>`. Inno Setup 6 필요(`winget install JRSoftware.InnoSetup`, 사용자 범위 설치면 `%LOCALAPPDATA%\Programs\Inno Setup 6`).
+- 사용자별 설치(관리자 권한 X) `%LOCALAPPDATA%\Programs\Oinzi`. 데이터는 `%APPDATA%\Oinzi` 그대로라 제거해도 남는다. 제거 마지막에 `oinzi.exe --unregister`가 기본 브라우저 등록·시작 프로그램 항목을 지운다(Mutex보다 먼저 처리).
 - 서명 안 된 exe라 SmartScreen "알 수 없는 게시자" 경고가 뜬다 → 없애려면 코드 서명 인증서.
 - 「시작하기」 AI 연결: Claude는 공식 `irm https://claude.ai/install.ps1 | iex`, Codex는 npm(`@openai/codex`, npm 없으면 winget으로 Node LTS 먼저), Node는 winget. 보이는 PowerShell 창에서 실행해 진행·오류를 사람이 보게 한다. 상태는 창이 다시 활성화될 때 재검사.

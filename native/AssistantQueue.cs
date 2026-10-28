@@ -1,4 +1,4 @@
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 public sealed partial class BrowserForm
 {
@@ -18,7 +18,7 @@ public sealed partial class BrowserForm
         LoadAssistantHistory();
         var chat = currentConversations[engine];
         var context = withContext && Active() is { } tab
-            ? $"[pluck] 사용자가 보고 있는 탭: \"{tab.View.CoreWebView2?.DocumentTitle}\" — {tab.View.Source} (tab id {tab.Id}{(tab.Profile == DefaultProfile ? "" : $", 프로필 {ProfileName(tab.Profile)}")})\n\n" : "";
+            ? $"[Oinzi] 사용자가 보고 있는 탭: \"{tab.View.CoreWebView2?.DocumentTitle}\" — {tab.View.Source} (tab id {tab.Id}{(tab.Profile == DefaultProfile ? "" : $", 프로필 {ProfileName(tab.Profile)}")})\n\n" : "";
         context += PickedContext(picked);
         var images = pendingImages[engine].ToArray();
         pendingImages[engine].Clear();

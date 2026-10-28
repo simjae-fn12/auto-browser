@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // Per-conversation CLI options shown in the AI panel: model, reasoning effort, permission mode and working folder.
 public sealed partial class BrowserForm
@@ -114,7 +114,7 @@ public sealed partial class BrowserForm
         {
             process.ErrorDataReceived += (_, _) => { };
             process.BeginErrorReadLine();
-            process.StandardInput.WriteLine("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"pluck","title":"pluck","version":"1"},"capabilities":null}}""");
+            process.StandardInput.WriteLine("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"oinzi","title":"Oinzi","version":"1"},"capabilities":null}}""");
             process.StandardInput.WriteLine("""{"jsonrpc":"2.0","method":"initialized"}""");
             process.StandardInput.WriteLine("""{"jsonrpc":"2.0","id":2,"method":"model/list","params":{}}""");
             process.StandardInput.Flush();

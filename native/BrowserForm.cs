@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 public sealed partial class BrowserForm : Form
 {
@@ -39,7 +39,7 @@ public sealed partial class BrowserForm : Form
         public string LastSnapshotUrl { get; set; } = "";
         // Counts cross-document navigations, so per-document flags below reset when the page is replaced.
         public int DocumentSerial { get; set; }
-        // Document an agent ran js in, and document pluck typed a saved password into (with what it typed, for masking).
+        // Document an agent ran js in, and document Oinzi typed a saved password into (with what it typed, for masking).
         public int ScriptedDocument { get; set; } = -1;
         public int LoginDocument { get; set; } = -1;
         public List<string> LoginSecrets { get; } = [];
@@ -70,9 +70,9 @@ public sealed partial class BrowserForm : Form
     private const string Home = "https://www.google.com/";
     private static readonly System.Text.RegularExpressions.Regex SessionIdPattern = new("^[A-Za-z0-9_-]{6,64}$");
     private readonly string dataDir = DataDirectory;
-    // What the person opens themselves (exported videos, AI output) lives in Documentspluck; profile, history
+    // What the person opens themselves (exported videos, AI output) lives in Documents\Oinzi; profile, history
     // and raw recording frames stay in dataDir because they hold login state and everything that was on screen.
-    private static readonly string userFilesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "pluck");
+    private static readonly string userFilesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Oinzi");
     private static string RecordingVideosDir => Path.Combine(userFilesDir, "녹화");
     private static string AiWorkDir => Path.Combine(userFilesDir, "AI 작업");
     private static string ScreenshotsDir => Path.Combine(userFilesDir, "스크린샷");
@@ -88,7 +88,7 @@ public sealed partial class BrowserForm : Form
 
     public BrowserForm()
     {
-        Text = "pluck";
+        Text = "Oinzi";
         Width = 1380;
         Height = 900;
         MinimumSize = new Size(780, 520);
@@ -158,7 +158,7 @@ public sealed partial class BrowserForm : Form
         catch (Exception ex)
         {
             File.WriteAllText(Path.Combine(dataDir, "startup-error.log"), ex.ToString());
-            MessageBox.Show(this, ex.Message, "pluck Windows Native 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, "Oinzi Windows Native 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -314,7 +314,7 @@ public sealed partial class BrowserForm : Form
     {
         var title = tab.View.CoreWebView2?.DocumentTitle;
         tab.Page.Text = (tab.Agent ? $"◆ {SessionLabel(tab.Space)} · " : "") + (string.IsNullOrWhiteSpace(title) ? "새 탭" : title.Length > 24 ? title[..24] + "…" : title);
-        if (Active() == tab) Text = string.IsNullOrWhiteSpace(title) ? "pluck" : $"{title} — pluck";
+        if (Active() == tab) Text = string.IsNullOrWhiteSpace(title) ? "Oinzi" : $"Oinzi — {title}";
         RefreshSidebar();
     }
 
@@ -324,7 +324,7 @@ public sealed partial class BrowserForm : Form
     {
         var tab = Active();
         var title = tab?.View.CoreWebView2?.DocumentTitle;
-        Text = string.IsNullOrWhiteSpace(title) ? "pluck" : $"{title} — pluck";
+        Text = string.IsNullOrWhiteSpace(title) ? "Oinzi" : $"Oinzi — {title}";
         RefreshSidebar();
         _ = PostToolbarExtensionsAsync();
     }
@@ -560,7 +560,7 @@ public sealed partial class BrowserForm : Form
             }
             return new { session = opened.Id, label = opened.Label, created, profile = ProfileName(opened.Profile), tabs = SessionTabs(opened.Id) };
         }
-        if (requested.Length == 0) throw new InvalidOperationException("Session required. Run through agent.mjs, or set PLUCK_SESSION for cli.ps1.");
+        if (requested.Length == 0) throw new InvalidOperationException("Session required. Run through agent.mjs, or set OINZI_SESSION for cli.ps1.");
         var session = OpenSession(requested);
         if (session.Stopped) throw new InvalidOperationException(StoppedMessage);
         session.LastSeen = DateTime.UtcNow;
@@ -706,7 +706,7 @@ public sealed partial class BrowserForm : Form
 
     private void AskPerson(CoreWebView2ScriptDialogOpeningEventArgs e)
     {
-        var title = Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) ? uri.Host : "pluck";
+        var title = Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) ? uri.Host : "Oinzi";
         switch (e.Kind)
         {
             case CoreWebView2ScriptDialogKind.Alert:
@@ -770,7 +770,7 @@ public sealed partial class BrowserForm : Form
     // Interactive elements with their accessible role, name and state, visible ones first, plus a heading outline.
     private static readonly string SnapshotScript = """
         (() => {
-          document.querySelectorAll('[data-pluck-native-ref]').forEach(el => el.removeAttribute('data-pluck-native-ref'));
+          document.querySelectorAll('[data-oinzi-ref]').forEach(el => el.removeAttribute('data-oinzi-ref'));
           const selector = 'a[href],button,input:not([type=hidden]),textarea,select,summary,[contenteditable=""],[contenteditable="true"],'
             + '[role=button],[role=link],[role=checkbox],[role=radio],[role=switch],[role=tab],[role=menuitem],[role=menuitemcheckbox],'
             + '[role=option],[role=combobox],[role=textbox],[role=searchbox],[role=slider],[role=treeitem],[onclick],[tabindex]:not([tabindex="-1"])';
@@ -814,7 +814,7 @@ public sealed partial class BrowserForm : Form
             .filter(el => !el.parentElement?.closest(selector) || el.matches('a[href],button,input,textarea,select'));
           const ordered = [...all.filter(inView), ...all.filter(el => !inView(el))].slice(0, __ELEMENT_LIMIT__);
           const elements = ordered.map((el, i) => {
-            const ref = String(i + 1); el.setAttribute('data-pluck-native-ref', ref);
+            const ref = String(i + 1); el.setAttribute('data-oinzi-ref', ref);
             const item = { ref, tag: el.tagName.toLowerCase(), role: role(el), text: name(el).slice(0, 160), href: el.getAttribute('href') };
             const v = value(el); if (v) item.value = v;
             const s = state(el); if (s) item.state = s;

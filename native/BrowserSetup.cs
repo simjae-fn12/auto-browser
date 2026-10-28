@@ -7,9 +7,9 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Win32;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
-// Moving in from another browser: Chrome/Edge profiles become pluck profiles, and pluck can be the default browser.
+// Moving in from another browser: Chrome/Edge profiles become Oinzi profiles, and Oinzi can be the default browser.
 // Only profile names and account emails are read from the other browser. Its cookies and passwords stay encrypted where
 // they are; passwords come over through the browser's own "Export passwords" CSV (ImportPasswordCsv).
 public sealed partial class BrowserForm
@@ -103,8 +103,8 @@ public sealed partial class BrowserForm
         return null;
     }
 
-    // Opens the export page in the very browser profile this pluck profile came from; the person exports there and then
-    // brings the file in with 「CSV 가져오기」. pluck itself never opens the other browser's password store.
+    // Opens the export page in the very browser profile this Oinzi profile came from; the person exports there and then
+    // brings the file in with 「CSV 가져오기」. Oinzi itself never opens the other browser's password store.
     private void OpenPasswordExport(BrowserProfile profile)
     {
         void Note(string text) => PostChrome(new { type = "settings.note", text });
@@ -118,9 +118,9 @@ public sealed partial class BrowserForm
         Note($"{browser.Label}에서 「비밀번호 내보내기」로 CSV를 받은 뒤, 이 프로필의 「CSV 가져오기」로 넣으세요.");
     }
 
-    private const string BrowserKey = @"Software\Clients\StartMenuInternet\pluck";
-    private const string UrlProgId = "pluckURL";
-    private const string HtmlProgId = "pluckHTML";
+    private const string BrowserKey = @"Software\Clients\StartMenuInternet\Oinzi";
+    private const string UrlProgId = "OinziURL";
+    private const string HtmlProgId = "OinziHTML";
 
     private static bool IsDefaultBrowser()
     {
@@ -128,8 +128,8 @@ public sealed partial class BrowserForm
         return key?.GetValue("ProgId") as string == UrlProgId;
     }
 
-    // Windows lets only the person choose the default browser, so pluck registers itself as a candidate (per user,
-    // no admin rights) and opens the Settings page where pluck can be picked.
+    // Windows lets only the person choose the default browser, so Oinzi registers itself as a candidate (per user,
+    // no admin rights) and opens the Settings page where Oinzi can be picked.
     private static void RegisterBrowser()
     {
         var exe = Environment.ProcessPath ?? Application.ExecutablePath;
@@ -141,28 +141,30 @@ public sealed partial class BrowserForm
             using (var defaultIcon = key.CreateSubKey("DefaultIcon")) defaultIcon.SetValue("", icon);
             using (var command = key.CreateSubKey(@"shell\open\command")) command.SetValue("", $"\"{exe}\" \"%1\"");
             using var app = key.CreateSubKey("Application");
-            app.SetValue("ApplicationName", "pluck");
-            app.SetValue("AppUserModelId", "pluck.browser");
+            app.SetValue("ApplicationName", "Oinzi");
+            app.SetValue("AppUserModelId", "oinzi.browser");
         }
-        ProgId(UrlProgId, "pluck URL");
-        ProgId(HtmlProgId, "pluck HTML 문서");
+        ProgId(UrlProgId, "Oinzi URL");
+        ProgId(HtmlProgId, "Oinzi HTML 문서");
         using (var browser = Registry.CurrentUser.CreateSubKey(BrowserKey))
         {
-            browser.SetValue("", "pluck");
+            browser.SetValue("", "Oinzi");
             using (var defaultIcon = browser.CreateSubKey("DefaultIcon")) defaultIcon.SetValue("", icon);
             using (var command = browser.CreateSubKey(@"shell\open\command")) command.SetValue("", $"\"{exe}\"");
             using var capabilities = browser.CreateSubKey("Capabilities");
-            capabilities.SetValue("ApplicationName", "pluck");
+            capabilities.SetValue("ApplicationName", "Oinzi");
             capabilities.SetValue("ApplicationDescription", "AI와 함께 쓰는 브라우저");
             capabilities.SetValue("ApplicationIcon", icon);
-            using (var menu = capabilities.CreateSubKey("StartMenu")) menu.SetValue("StartMenuInternet", "pluck");
+            using (var menu = capabilities.CreateSubKey("StartMenu")) menu.SetValue("StartMenuInternet", "Oinzi");
             using (var urls = capabilities.CreateSubKey("URLAssociations")) { urls.SetValue("http", UrlProgId); urls.SetValue("https", UrlProgId); }
             using var files = capabilities.CreateSubKey("FileAssociations");
             foreach (var extension in new[] { ".htm", ".html", ".xhtml" }) files.SetValue(extension, HtmlProgId);
         }
-        using (var registered = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications")) registered.SetValue("pluck", BrowserKey + @"\Capabilities");
+        using (var registered = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications")) registered.SetValue("Oinzi", BrowserKey + @"\Capabilities");
         SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
     }
+
+    internal static void RegisterBrowserCandidate() => RegisterBrowser();
 
     internal static void UnregisterBrowser()
     {
@@ -170,14 +172,14 @@ public sealed partial class BrowserForm
         {
             foreach (var key in new[] { BrowserKey, $@"Software\Classes\{UrlProgId}", $@"Software\Classes\{HtmlProgId}" })
                 Registry.CurrentUser.DeleteSubKeyTree(key, false);
-            using (var registered = Registry.CurrentUser.OpenSubKey(@"Software\RegisteredApplications", true)) registered?.DeleteValue("pluck", false);
-            using (var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) run?.DeleteValue("pluck", false);
+            using (var registered = Registry.CurrentUser.OpenSubKey(@"Software\RegisteredApplications", true)) registered?.DeleteValue("Oinzi", false);
+            using (var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) run?.DeleteValue("Oinzi", false);
             SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException) { }
     }
 
-    // A moved pluck.exe would leave links pointing at a file that no longer exists; a test build elsewhere must not take over.
+    // A moved oinzi.exe would leave links pointing at a file that no longer exists; a test build elsewhere must not take over.
     private static void RefreshBrowserRegistration()
     {
         using var key = Registry.CurrentUser.OpenSubKey($@"Software\Classes\{UrlProgId}\shell\open\command");
@@ -190,11 +192,11 @@ public sealed partial class BrowserForm
         try { RegisterBrowser(); }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException)
         {
-            PostChrome(new { type = "settings.note", text = "pluck을 브라우저로 등록하지 못했습니다: " + ex.Message });
+            PostChrome(new { type = "settings.note", text = "Oinzi를 브라우저로 등록하지 못했습니다: " + ex.Message });
             return;
         }
-        Process.Start(new ProcessStartInfo("ms-settings:defaultapps?registeredAppUser=pluck") { UseShellExecute = true });
-        PostChrome(new { type = "settings.note", text = "Windows 설정에서 「기본값으로 설정」을 누르세요. pluck으로 돌아오면 상태가 바뀝니다." });
+        Process.Start(new ProcessStartInfo("ms-settings:defaultapps?registeredAppUser=Oinzi") { UseShellExecute = true });
+        PostChrome(new { type = "settings.note", text = "Windows 설정에서 「기본값으로 설정」을 누르세요. Oinzi로 돌아오면 상태가 바뀝니다." });
     }
 
     private void PostSetupState()
@@ -222,7 +224,7 @@ public sealed partial class BrowserForm
                 var added = ImportBrowserProfiles();
                 SaveProfiles();
                 PostProfiles();
-                PostChrome(new { type = "settings.note", text = added > 0 ? $"프로필 {added}개를 만들었습니다. 로그인 상태는 옮겨 오지 않으니 프로필마다 pluck에서 한 번씩 로그인하세요." : "새로 가져올 프로필이 없습니다." });
+                PostChrome(new { type = "settings.note", text = added > 0 ? $"프로필 {added}개를 만들었습니다. 로그인 상태는 옮겨 오지 않으니 프로필마다 Oinzi에서 한 번씩 로그인하세요." : "새로 가져올 프로필이 없습니다." });
                 break;
             case "setup.exportPasswords" when FindProfile(Read(message, "id")) is { } profile: OpenPasswordExport(profile); break;
             default: return;
@@ -249,7 +251,7 @@ public sealed partial class BrowserForm
             .FirstOrDefault(File.Exists);
 
     // Each tool's official install command, run in a visible PowerShell window so the person sees progress, prompts and
-    // errors. pluck re-checks when its window is active again.
+    // errors. Oinzi re-checks when its window is active again.
     private const string NodeInstall = "winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements; "
         + "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); ";
     private static readonly Dictionary<string, (string Name, string Script)> ToolInstallers = new()
@@ -263,7 +265,7 @@ public sealed partial class BrowserForm
     {
         if (!ToolInstallers.TryGetValue(tool, out var installer)) return;
         var script = $"$Host.UI.RawUI.WindowTitle = '{installer.Name} 설치'; Write-Host '{installer.Name}을(를) 설치합니다.'; " + installer.Script
-            + "Write-Host ''; Read-Host '끝났습니다. Enter를 누르면 창이 닫힙니다. pluck으로 돌아가면 설치 상태가 바뀝니다'";
+            + "Write-Host ''; Read-Host '끝났습니다. Enter를 누르면 창이 닫힙니다. Oinzi로 돌아가면 설치 상태가 바뀝니다'";
         var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false };
         foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script }) start.ArgumentList.Add(arg);
         try { Process.Start(start); }
@@ -271,13 +273,14 @@ public sealed partial class BrowserForm
         PostChrome(new { type = "settings.note", text = $"{installer.Name} 설치 창을 열었습니다. 끝나면 「AI 계정」에서 로그인하세요." });
     }
 
-    internal static string DataDirectory { get; } = Environment.GetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR")
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "pluck-windows-native");
+    internal static string DataDirectory { get; } = Environment.GetEnvironmentVariable("OINZI_DATA_DIR")
+        ?? Environment.GetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR")
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Oinzi");
 
-    // One pluck per data folder: a link clicked in another app starts a second pluck.exe, which hands the link to the
+    // One Oinzi per data folder: a link clicked in another app starts a second oinzi.exe, which hands the link to the
     // running one through this pipe and exits.
     internal static string InstanceName { get; } =
-        "pluck-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(DataDirectory).ToLowerInvariant())))[..16];
+        "oinzi-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(DataDirectory).ToLowerInvariant())))[..16];
 
     internal static List<string> LaunchLinks { get; } = [];
     private bool linksReady;
@@ -294,7 +297,7 @@ public sealed partial class BrowserForm
         {
             using var pipe = new NamedPipeClientStream(".", InstanceName, PipeDirection.Out, PipeOptions.CurrentUserOnly);
             pipe.Connect(5000);
-            // The click gave this process the foreground; the running pluck may take it.
+            // The click gave this process the foreground; the running Oinzi may take it.
             AllowSetForegroundWindow(-1);
             using var writer = new StreamWriter(pipe);
             writer.Write(JsonSerializer.Serialize(links));

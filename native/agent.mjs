@@ -8,10 +8,10 @@ const args = process.argv.slice(2);
 let keepTabs = false;
 let scriptPath;
 // The AI panel passes its conversation's session in the environment; a terminal agent passes --session to reuse its tabs.
-let sessionId = process.env.PLUCK_SESSION || '';
-let sessionLabel = process.env.PLUCK_SESSION_LABEL || '';
-// --profile / PLUCK_PROFILE pins the session to a browser profile, so its tabs use that profile's logins.
-let sessionProfile = process.env.PLUCK_PROFILE || '';
+let sessionId = process.env.OINZI_SESSION || '';
+let sessionLabel = process.env.OINZI_SESSION_LABEL || '';
+// --profile / OINZI_PROFILE pins the session to a browser profile, so its tabs use that profile's logins.
+let sessionProfile = process.env.OINZI_PROFILE || '';
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--keep-tabs') keepTabs = true;
   else if (args[i] === '--session') sessionId = args[++i] ?? '';
@@ -20,11 +20,11 @@ for (let i = 0; i < args.length; i++) {
   else scriptPath ??= args[i];
 }
 
-const connectionPath = process.env.PLUCK_NATIVE_CONNECTION
-  || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'pluck-windows-native', 'connection.json');
+const connectionPath = process.env.OINZI_CONNECTION
+  || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Oinzi', 'connection.json');
 let connection;
 try { connection = JSON.parse(await fs.readFile(connectionPath, 'utf8')); }
-catch { throw new Error('pluck Windows Native를 먼저 실행하세요.'); }
+catch { throw new Error('Oinzi Windows Native를 먼저 실행하세요.'); }
 
 async function call(command, args = {}) {
   const response = await fetch(`http://127.0.0.1:${connection.port}/`, {
@@ -95,7 +95,7 @@ let opened;
 function session(label) {
   return opened ??= call('session', { session: sessionId, label: label || sessionLabel, profile: sessionProfile }).then(result => {
     if (result.created && keepTabs)
-      console.error(`pluck session ${result.session}: pass --session ${result.session} to the next run to keep using these tabs.`);
+      console.error(`Oinzi session ${result.session}: pass --session ${result.session} to the next run to keep using these tabs.`);
     sessionId = result.session;
     return scoped(result.session, result.label, result.profile);
   });

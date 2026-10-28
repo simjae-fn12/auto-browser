@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // The AI panel runs the person's own Claude Code or Codex CLI headlessly, so their subscriptions are used as-is.
 // Every conversation gets its own CLI process, so several can work at once. Claude keeps its stream-json input
@@ -43,7 +43,7 @@ public sealed partial class BrowserForm
         return workspace;
     }
 
-    // Bundled skills live only in pluck's own folders (never the person's chosen project or ~/.claude), so they
+    // Bundled skills live only in Oinzi's own folders (never the person's chosen project or ~/.claude), so they
     // serve the AI panel without touching the person's other Claude setups. Rewritten when the app ships new text.
     private static void InstallSkills(string folder)
     {
@@ -141,8 +141,8 @@ public sealed partial class BrowserForm
                 || key.StartsWith("CLAUDE_CODE_", StringComparison.OrdinalIgnoreCase)
                 || key.StartsWith("VSCODE_", StringComparison.OrdinalIgnoreCase)
                 || key.StartsWith("ORCA_", StringComparison.OrdinalIgnoreCase)
-                || key.StartsWith("PLUCK_SESSION", StringComparison.OrdinalIgnoreCase)
-                || key.Equals("PLUCK_PROFILE", StringComparison.OrdinalIgnoreCase)
+                || key.StartsWith("OINZI_SESSION", StringComparison.OrdinalIgnoreCase)
+                || key.Equals("OINZI_PROFILE", StringComparison.OrdinalIgnoreCase)
                 || key is "CLAUDECODE" or "WT_SESSION" or "WT_PROFILE_ID" or "TERM_SESSION_ID" or "TERM_PROGRAM" or "TERM_PROGRAM_VERSION")
                 info.Environment.Remove(key);
         info.Environment["TERM"] = "dumb";
@@ -209,9 +209,9 @@ public sealed partial class BrowserForm
         };
         IsolateAssistantEnvironment(info);
         ApplyAccount(info, engine);
-        if (connectionFile != null) info.Environment["PLUCK_NATIVE_CONNECTION"] = connectionFile;
-        info.Environment["PLUCK_SESSION"] = space;
-        info.Environment["PLUCK_SESSION_LABEL"] = browserSession.Label;
+        if (connectionFile != null) info.Environment["OINZI_CONNECTION"] = connectionFile;
+        info.Environment["OINZI_SESSION"] = space;
+        info.Environment["OINZI_SESSION_LABEL"] = browserSession.Label;
         var instructions = AssistantInstructions(Path.Combine(workspace, "agent.mjs"), scripts);
         var started = engine == "claude"
             ? StartClaude(chat, info, prompt, images, instructions, cwd == workspace ? null : workspace)
@@ -600,7 +600,7 @@ public sealed partial class BrowserForm
                 if (message["id"] is { } requestId)
                 {
                     // Approval requests should not arrive with approvalPolicy "never"; decline anything that does.
-                    Send(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = requestId.DeepClone(), ["error"] = new JsonObject { ["code"] = -32601, ["message"] = "pluck does not answer " + method } });
+                    Send(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = requestId.DeepClone(), ["error"] = new JsonObject { ["code"] = -32601, ["message"] = "Oinzi does not answer " + method } });
                     continue;
                 }
                 var parameters = message["params"] as JsonObject ?? new JsonObject();
@@ -618,7 +618,7 @@ public sealed partial class BrowserForm
             try
             {
                 if (Failure(await Request("initialize", new JsonObject
-                    { ["clientInfo"] = new JsonObject { ["name"] = "pluck", ["title"] = "pluck", ["version"] = "1" }, ["capabilities"] = null })) is { } initError)
+                    { ["clientInfo"] = new JsonObject { ["name"] = "oinzi", ["title"] = "Oinzi", ["version"] = "1" }, ["capabilities"] = null })) is { } initError)
                     throw new InvalidOperationException(initError);
                 Send(new JsonObject { ["jsonrpc"] = "2.0", ["method"] = "initialized" });
                 var thread = new JsonObject { ["cwd"] = info.WorkingDirectory, ["approvalPolicy"] = "never", ["developerInstructions"] = instructions };

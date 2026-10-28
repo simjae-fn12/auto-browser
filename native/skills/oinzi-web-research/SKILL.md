@@ -1,5 +1,5 @@
 ---
-name: pluck-web-research
+name: oinzi-web-research
 description: 여러 웹페이지를 열어 조사하고 출처가 붙은 보고서를 작업 폴더에 저장한다. "알아봐줘", "조사해서 정리해줘", "비교 분석해줘", "리서치" 같은 요청에 쓴다.
 ---
 

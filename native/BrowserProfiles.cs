@@ -4,10 +4,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Web.WebView2.Core;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // Browser profiles (separate cookie jars, like Chrome profiles) and a per-profile vault of site logins.
-// Agents see which profile holds which site account, never a password: `login` fills the form inside pluck, and only on
+// Agents see which profile holds which site account, never a password: `login` fills the form inside Oinzi, and only on
 // the credential's own site in the credential's own profile, so a page cannot trick an agent into typing it elsewhere.
 public sealed partial class BrowserForm
 {
@@ -335,17 +335,17 @@ public sealed partial class BrowserForm
           const pass = inputs.find(el => el.type === 'password') || null;
           const named = el => /user|mail|login|id|account|아이디|이메일/i.test([el.name, el.id, el.autocomplete, el.placeholder, el.getAttribute('aria-label')].join(' '));
           const user = (pass ? inputs.slice(0, inputs.indexOf(pass)).reverse().find(textLike) : inputs.filter(textLike).find(named)) || null;
-          window.__pluckLogin = { user, pass };
+          window.__oinziLogin = { user, pass };
           return { user: !!user, pass: !!pass };
         })()
         """;
 
     private static string LoginFocusScript(string field) => $$"""
-        (() => { const el = window.__pluckLogin?.{{field}}; if (!el || !el.isConnected) return false; el.focus(); return document.activeElement === el; })()
+        (() => { const el = window.__oinziLogin?.{{field}}; if (!el || !el.isConnected) return false; el.focus(); return document.activeElement === el; })()
         """;
 
     private static string LoginCheckScript(string field, int length) => $$"""
-        (() => { const el = window.__pluckLogin?.{{field}}; return !!el && el.isConnected && document.activeElement === el && el.value.length === {{length}}; })()
+        (() => { const el = window.__oinziLogin?.{{field}}; return !!el && el.isConnected && document.activeElement === el && el.value.length === {{length}}; })()
         """;
 
     private static async Task<(string FrameId, string LoaderId)> MainFrameAsync(CoreWebView2 core)
@@ -377,7 +377,7 @@ public sealed partial class BrowserForm
         if (!HostMatches(host, credential.Site))
             throw new InvalidOperationException($"This tab is on {host}, but the login is for {credential.Site}. Nothing was filled.");
         var (frameId, loaderId) = await MainFrameAsync(core);
-        var world = JsonNode.Parse(await CdpAsync(core, "Page.createIsolatedWorld", new { frameId, worldName = "pluck-login" }))?["executionContextId"]?.GetValue<int>()
+        var world = JsonNode.Parse(await CdpAsync(core, "Page.createIsolatedWorld", new { frameId, worldName = "oinzi-login" }))?["executionContextId"]?.GetValue<int>()
             ?? throw new InvalidOperationException("Could not inspect the page.");
         var found = await EvaluateInWorldAsync(core, world, LoginFindScript);
         var hasUser = found?["user"]?.GetValue<bool>() == true;
@@ -402,7 +402,7 @@ public sealed partial class BrowserForm
         {
             string secret;
             try { secret = Unprotect(credential.Secret); }
-            catch (CryptographicException) { throw new InvalidOperationException("The saved password cannot be read on this Windows account. Ask the person to save it again in pluck settings."); }
+            catch (CryptographicException) { throw new InvalidOperationException("The saved password cannot be read on this Windows account. Ask the person to save it again in Oinzi settings."); }
             // From now on this document holds a password: agent scripts are refused and snapshots mask it.
             tab.LoginDocument = tab.DocumentSerial;
             tab.LoginSecrets.Add(secret);
@@ -417,15 +417,15 @@ public sealed partial class BrowserForm
         };
     }
 
-    // A document pluck typed a password into must not hand it back: no scripts, no value-matching selectors, and
+    // A document Oinzi typed a password into must not hand it back: no scripts, no value-matching selectors, and
     // snapshots have the secret masked.
     private static void GuardLoginDocument(BrowserTab tab, string command, string target)
     {
         if (tab.LoginDocument != tab.DocumentSerial) return;
-        if (command == "js") throw new InvalidOperationException("Scripts are disabled on a page where pluck filled a saved login. Navigate away first.");
+        if (command == "js") throw new InvalidOperationException("Scripts are disabled on a page where Oinzi filled a saved login. Navigate away first.");
         // A "show password" toggle would put the password on screen.
-        if (command == "screenshot") throw new InvalidOperationException("Screenshots are disabled on a page where pluck filled a saved login. Submit the form or navigate away first.");
-        if (target.Contains("[value", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Value selectors are disabled on a page where pluck filled a saved login.");
+        if (command == "screenshot") throw new InvalidOperationException("Screenshots are disabled on a page where Oinzi filled a saved login. Submit the form or navigate away first.");
+        if (target.Contains("[value", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Value selectors are disabled on a page where Oinzi filled a saved login.");
     }
 
     private static object MaskSecrets(BrowserTab tab, object result)

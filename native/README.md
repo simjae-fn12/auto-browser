@@ -1,4 +1,4 @@
-# pluck Windows Native
+# Oinzi Windows Native
 
 Windows Forms와 Microsoft Edge WebView2로 만든 Windows 브라우저입니다. Electron은 사용하지 않습니다.
 
@@ -9,7 +9,7 @@ dotnet run --project .\native.csproj
 dotnet publish .\native.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o .\publish
 ```
 
-빌드에는 .NET 10 SDK가 필요합니다. 실행 파일은 `publish\pluck.exe`입니다. Windows의 WebView2 런타임이 필요합니다. 모든 탭은 `%APPDATA%\pluck-windows-native\profile`을 공유하므로 앱 안에서 로그인한 사이트를 에이전트 탭도 사용할 수 있습니다. 다시 시작할 때는 사람 탭의 URL만 복원됩니다.
+빌드에는 .NET 10 SDK가 필요합니다. 실행 파일은 `publish\oinzi.exe`입니다. Windows의 WebView2 런타임이 필요합니다. 모든 탭은 `%APPDATA%\Oinzi\profile`을 공유하므로 앱 안에서 로그인한 사이트를 에이전트 탭도 사용할 수 있습니다. 다시 시작할 때는 사람 탭의 URL만 복원됩니다.
 
 ## 화면과 단축키
 
@@ -30,7 +30,7 @@ dotnet publish .\native.csproj -c Release -r win-x64 --self-contained true -p:Pu
 
 ### 설정
 
-`Ctrl+,`나 사이드바 아래 톱니 버튼으로 엽니다. 왼쪽 위 검색창으로 항목을 찾을 수 있습니다. 값은 `%APPDATA%\pluck-windows-native\settings.json`에 저장되고 바로 적용됩니다.
+`Ctrl+,`나 사이드바 아래 톱니 버튼으로 엽니다. 왼쪽 위 검색창으로 항목을 찾을 수 있습니다. 값은 `%APPDATA%\Oinzi\settings.json`에 저장되고 바로 적용됩니다.
 
 - **일반**: 시작할 때(이전 탭 열기/홈 페이지), 홈 페이지, 검색 엔진(Google·네이버·Bing·DuckDuckGo), 테마(시스템/라이트/다크, WebView2 `PreferredColorScheme`이라 웹 페이지의 다크 모드도 따라감), 다운로드 폴더
 - **AI**: 작업 중에 보낸 메시지(바로 반영/대기열), 현재 탭 함께 보내기 기본값, 맞춤 지시사항(모든 대화의 시스템 프롬프트 앞에 붙음), 따라보기, 페이지 위 작업 표시, 쓰지 않는 AI 탭 정리 시간(5분~2시간, 끄기), 작업 완료 알림(작업 표시줄 깜빡임)과 알림음
@@ -46,7 +46,7 @@ Chrome 프로필처럼 프로필마다 로그인 상태(쿠키·사이트 저장
 
 - **프로필 고르기**: 사이드바 아래 프로필 버튼으로 새 탭을 열 프로필을 고릅니다. 기본이 아닌 프로필의 탭은 아이콘에 그 프로필 색 테두리가 생깁니다. 팝업은 연 탭의 프로필을 따르고, 탭을 복원할 때도 프로필이 유지됩니다.
 - **사이트 계정 저장**: 설정 → 프로필·사이트 계정에서 프로필마다 사이트·아이디·비밀번호·메모를 저장합니다. 비밀번호는 Windows DPAPI(현재 사용자)로 암호화해 `profiles.json`에 넣습니다. 화면(chrome 페이지)은 저장된 비밀번호를 받지 않습니다. 프로필 설명은 AI가 프로필을 고를 때 참고합니다.
-- **AI가 쓰는 방법**: `browser.profiles()`는 프로필과 저장된 계정 목록(사이트·아이디·메모, 비밀번호 제외)을 돌려줍니다. `task.open(url, { profile })`로 그 프로필의 탭을 열고, `task.login(id, credential)`을 부르면 pluck이 아이디와 비밀번호를 직접 입력합니다. 로그인 칸이 있는 문서의 주소가 저장된 사이트(또는 하위 도메인)와 같고, 탭의 프로필이 계정의 프로필과 같을 때만 입력합니다. MCP 도구는 `profiles`, `open`(profile), `login`입니다.
+- **AI가 쓰는 방법**: `browser.profiles()`는 프로필과 저장된 계정 목록(사이트·아이디·메모, 비밀번호 제외)을 돌려줍니다. `task.open(url, { profile })`로 그 프로필의 탭을 열고, `task.login(id, credential)`을 부르면 Oinzi가 아이디와 비밀번호를 직접 입력합니다. 로그인 칸이 있는 문서의 주소가 저장된 사이트(또는 하위 도메인)와 같고, 탭의 프로필이 계정의 프로필과 같을 때만 입력합니다. MCP 도구는 `profiles`, `open`(profile), `login`입니다.
 - **보호 장치**:
   - 사이트 주소는 페이지가 아니라 WebView2가 알려 주는 최상위 주소로 확인합니다. 칸 찾기는 페이지가 바꿀 수 없는 CDP isolated world에서 합니다.
   - 다른 사이트가 iframe으로 감싼 로그인 화면이나 iframe 안의 로그인 폼에는 입력하지 않습니다.
@@ -63,18 +63,18 @@ Chrome 프로필처럼 프로필마다 로그인 상태(쿠키·사이트 저장
 - 실행할 때마다 선택되지 않은 새 대화 "[예약] 이름 · 날짜"를 만듭니다. 그래서 패널에서 보던 대화는 바뀌지 않습니다. 녹화를 켜 두면 끝날 때 녹화를 멈추고, 설정에 따라 MP4로 저장합니다.
 - 예약 실행 요청 앞에는 "되돌릴 수 없는 일(결제·게시·전송)은 하지 말고 결과를 정리하라"는 안내를 붙입니다.
 - 끝나면 Windows 알림이 뜹니다. 실행 기록(최근 20개, 화면에는 5개)을 누르면 그 대화가 열립니다. 이전 실행이 아직 진행 중이면 이번 실행은 건너뜁니다.
-- pluck이 켜져 있을 때만 실행됩니다. 꺼져 있던 동안 놓친 예약은 다음에 켤 때 한 번 실행합니다. "Windows 시작 시 pluck 실행"은 `HKCU\...\Run`에 등록합니다.
+- Oinzi가 켜져 있을 때만 실행됩니다. 꺼져 있던 동안 놓친 예약은 다음에 켤 때 한 번 실행합니다. "Windows 시작 시 Oinzi 실행"은 `HKCU\...\Run`에 등록합니다.
 
 ### 알림과 요소 고르기
 
-- AI 작업이 끝났는데 다른 창을 보고 있으면 Windows 알림(트레이 풍선)을 띄웁니다. 알림을 누르면 pluck이 앞으로 나오고 그 대화가 열립니다.
+- AI 작업이 끝났는데 다른 창을 보고 있으면 Windows 알림(트레이 풍선)을 띄웁니다. 알림을 누르면 Oinzi가 앞으로 나오고 그 대화가 열립니다.
 - AI 패널 `+` → **페이지에서 요소 고르기**를 누르면 보고 있는 탭에서 요소를 클릭으로 고를 수 있습니다(Esc로 취소). 입력창 위에 칩이 생기고, 다음 메시지에 요소의 태그·텍스트·CSS 선택자·탭 id가 함께 전달됩니다.
 
 ### 계정 여러 개 (Claude·Codex)
 
-`~/.claude/.credentials.json`이나 `~/.codex/auth.json`을 계정마다 바꿔 끼우는 방식은 토큰이 갱신될 때마다 따로 저장해 둔 사본이 낡아서 쓸 수 없습니다(갱신 토큰은 한 번 쓰면 바뀝니다). pluck은 계정마다 CLI 설정 폴더를 따로 두고, CLI를 실행할 때 환경 변수로 그 폴더를 가리킵니다.
+`~/.claude/.credentials.json`이나 `~/.codex/auth.json`을 계정마다 바꿔 끼우는 방식은 토큰이 갱신될 때마다 따로 저장해 둔 사본이 낡아서 쓸 수 없습니다(갱신 토큰은 한 번 쓰면 바뀝니다). Oinzi는 계정마다 CLI 설정 폴더를 따로 두고, CLI를 실행할 때 환경 변수로 그 폴더를 가리킵니다.
 
-- **기본 계정**은 평소 쓰는 `~/.claude`·`~/.codex` 로그인이며 pluck이 건드리지 않습니다. 추가 계정은 `%APPDATA%\pluck-windows-nativeccounts\<claude|codex>\<id>`에 있고 Claude에는 `CLAUDE_CONFIG_DIR`, Codex에는 `CODEX_HOME`으로 넘깁니다. 토큰은 각 폴더 안에서 갱신됩니다.
+- **기본 계정**은 평소 쓰는 `~/.claude`·`~/.codex` 로그인이며 Oinzi가 건드리지 않습니다. 추가 계정은 `%APPDATA%\Oinziccounts\<claude|codex>\<id>`에 있고 Claude에는 `CLAUDE_CONFIG_DIR`, Codex에는 `CODEX_HOME`으로 넘깁니다. 토큰은 각 폴더 안에서 갱신됩니다.
 - **계정 추가**: 이름을 적고 **브라우저로 로그인**을 누르면 콘솔 창에서 `claude auth login` / `codex login`이 실행됩니다. 창이 닫히면 `claude auth status --json`과 Codex `auth.json`의 id_token으로 이메일·요금제를 읽어 표시합니다. **자격 증명 파일 가져오기**로 저장해 둔 `auth-simjae.json` 같은 파일을 넣을 수도 있지만, 오래된 사본은 토큰이 이미 바뀌어 다시 로그인해야 할 수 있습니다.
 - **바꾸기**: 동그라미를 누르면 **다음에 시작하는 작업부터** 그 계정을 씁니다. 재시작은 필요 없습니다. 실행 중인 작업은 원래 계정으로 끝까지 갑니다. CLI 세션은 계정 폴더에 저장되므로, 계정을 바꾼 뒤 이어서 보내는 대화는 대화 기록으로 이어 갑니다(`Conversation.SessionAccount`).
 - **같이 쓰는 설정**: 추가 계정은 기본 계정의 `settings.json`·`CLAUDE.md`(Codex는 `config.toml`·`AGENTS.md`)를 실행할 때마다 한 방향으로 복사해 오고, `skills`·`agents`·`commands`·`plugins` 폴더는 디렉터리 정션으로 연결합니다. `~/.claude.json`의 사용자 MCP 서버(`mcpServers`)도 복사합니다. 계정을 삭제하면 정션만 지우고 원래 폴더는 남깁니다.
@@ -96,15 +96,15 @@ Chrome 프로필처럼 프로필마다 로그인 상태(쿠키·사이트 저장
 AI 패널 위쪽의 녹화 버튼(그 대화의 세션)이나 개요 카드의 **녹화**로 세션이 브라우저에서 하는 일을 녹화합니다. 녹화 중인 세션은 사이드바 그룹 이름에 `녹화 중`이 붙습니다.
 
 - 세션이 작업 중인 탭을 0.7초마다, 그리고 에이전트 명령이 끝날 때마다 DevTools로 캡처합니다. 다른 탭을 보고 있어도 녹화되며, 화면이 바뀌지 않으면 저장하지 않습니다. 에이전트 동작(이동·클릭·입력·스크롤)은 화면에 보이는 요소 이름으로, AI 패널 대화는 요청·답변·도구 실행까지 같은 시간축에 기록합니다.
-- 녹화는 `%APPDATA%\pluck-windows-native\recordings\<날짜-시간>`에 JPEG와 `meta.json`으로 저장되고 이 PC 밖으로 나가지 않습니다. 화면에 보인 계정 정보나 입력한 값도 그대로 남으니 공유하기 전에 확인하세요.
+- 녹화는 `%APPDATA%\Oinzi\recordings\<날짜-시간>`에 JPEG와 `meta.json`으로 저장되고 이 PC 밖으로 나가지 않습니다. 화면에 보인 계정 정보나 입력한 값도 그대로 남으니 공유하기 전에 확인하세요.
 - 개요(`Ctrl+Shift+O`)의 **녹화** 탭에서 다시 봅니다. 재생/일시정지(Space), 5초 이동(←/→), 1~8배속, 빈 구간 건너뛰기, 단계 목록을 눌러 그 시점으로 이동할 수 있고, 화면 아래에 현재 단계가 자막으로 나옵니다.
-- **MP4로 저장**은 ffmpeg로 `문서\pluck\녹화`에 자막을 넣은 MP4를 만듭니다. 녹화를 멈출 때 자동으로 만들 수도 있습니다(설정 → 녹화). ffmpeg가 없으면 현재 배속과 빈 구간 설정대로 WebM을 만들며, 이때는 실제 재생 시간만큼 걸립니다.
+- **MP4로 저장**은 ffmpeg로 `문서\Oinzi\녹화`에 자막을 넣은 MP4를 만듭니다. 녹화를 멈출 때 자동으로 만들 수도 있습니다(설정 → 녹화). ffmpeg가 없으면 현재 배속과 빈 구간 설정대로 WebM을 만들며, 이때는 실제 재생 시간만큼 걸립니다.
 
 ### AI 패널
 
 오른쪽 패널에서 Claude와 Codex에게 바로 작업을 맡길 수 있습니다. 앱이 이미 로그인된 로컬 CLI(`claude`, `codex`)를 헤드리스로 실행하므로 구독 중인 계정을 그대로 씁니다. 별도 API 키는 필요 없습니다. 두 CLI와 Node.js가 설치돼 있어야 합니다.
 
-- AI는 기본적으로 `%APPDATA%\pluck-windows-native\assistant\claude` 또는 `assistant\codex` 작업 폴더에서 실행되고, 여기에 놓인 `agent.mjs`로 브라우저를 조작합니다. 브라우저 조작 지침은 시스템 프롬프트(Claude `--append-system-prompt`, Codex `developerInstructions`)로 전달하고, 대화마다 `runs\<대화>` 스크립트 폴더를 따로 씁니다. 부모 터미널·에이전트의 세션 환경 변수는 제거하고 기존 CLI 로그인 위치는 유지합니다.
+- AI는 기본적으로 `%APPDATA%\Oinzi\assistant\claude` 또는 `assistant\codex` 작업 폴더에서 실행되고, 여기에 놓인 `agent.mjs`로 브라우저를 조작합니다. 브라우저 조작 지침은 시스템 프롬프트(Claude `--append-system-prompt`, Codex `developerInstructions`)로 전달하고, 대화마다 `runs\<대화>` 스크립트 폴더를 따로 씁니다. 부모 터미널·에이전트의 세션 환경 변수는 제거하고 기존 CLI 로그인 위치는 유지합니다.
 - **실행 방식:** Claude는 `claude -p --input-format stream-json`으로 입력을 열어 둔 채 실행하고, Codex는 `codex app-server`(JSON-RPC)로 실행합니다. 둘 다 대화마다 프로세스가 따로 떠서 **여러 대화가 동시에** 일할 수 있습니다. 대화 목록에서 실행 중인 대화에는 `●`가 붙고, 다른 대화로 바꿔도 작업은 계속됩니다.
 - **작업 중 추가 지시:** 실행 중에 보낸 메시지는 대기열에 쌓이지 않고 진행 중인 작업에 바로 들어갑니다(Claude는 stdin, Codex는 `turn/steer`). 전달할 수 없는 순간에만 대기열로 갑니다.
 - **실시간 표시:** 답변 스트리밍, 생각 과정(Claude thinking, Codex 추론 요약), 명령 실행과 그 출력의 마지막 줄, 할 일 목록(Claude TodoWrite, Codex plan), 사용량을 보여 줍니다. 입력창 위 상태 줄에 지금 하는 일과 경과 시간이 나오고, 90초 넘게 새 소식이 없으면 빨갛게 알려 줍니다. 출력 파이프를 손자 프로세스가 붙잡아도 CLI가 끝나면 2초 안에 실행을 정리합니다.
@@ -116,9 +116,9 @@ AI 패널 위쪽의 녹화 버튼(그 대화의 세션)이나 개요 카드의 *
   - 화면 가장자리를 천천히 도는 오로라 테두리
   - 씨앗 마크와 반짝이는 문구가 있는 상태 알약. 작업이 끝나면 체크 표시와 민트색으로 바뀝니다.
   - 대상 요소로 모여드는 모서리 괄호와 동작 칩(클릭·입력·선택 등). 입력 중에는 깜빡이는 커서가 함께 나옵니다.
-  - 살짝 넘치게 미끄러지는 pluck 커서와 클릭할 때의 이중 파동
+  - 살짝 넘치게 미끄러지는 Oinzi 커서와 클릭할 때의 이중 파동
   - 페이지를 읽을 때 위에서 아래로 한 번 지나가는 스캔 빛
-  AI 패널에도 같은 씨앗 마크가 쓰입니다. 작업 상태 줄은 120ms 늦게 나타나 깜빡임을 막고, 문구가 반짝입니다. 실행 중인 도구 줄에는 빛이 지나가고, 브라우저 도구 줄에는 레일이 빛납니다. 대기 중에는 세 가지 색 점이 물결칩니다. 모든 동작은 `docs/ego-motion-reference.md` §3의 pluck 모션 값(시간 4단계, `--ease`·`--ease-lift`·`--ease-pop`)을 쓰고, 동작 줄이기 설정을 켜면 움직임 없이 투명도만 바뀝니다. `AI가 조작하는 탭 따라보기`는 AI 패널이 열려 있고 그 패널에 보이는 대화에만 적용됩니다. 다른 대화나 터미널 에이전트는 보고 있는 탭을 바꾸지 않습니다. 끄면 항상 현재 탭을 유지합니다. 임의 `js` 명령은 작업 상태만 표시하며 구체적인 클릭 위치를 추적하지 않습니다.
+  AI 패널에도 같은 씨앗 마크가 쓰입니다. 작업 상태 줄은 120ms 늦게 나타나 깜빡임을 막고, 문구가 반짝입니다. 실행 중인 도구 줄에는 빛이 지나가고, 브라우저 도구 줄에는 레일이 빛납니다. 대기 중에는 세 가지 색 점이 물결칩니다. 모든 동작은 `docs/ego-motion-reference.md` §3의 Oinzi 모션 값(시간 4단계, `--ease`·`--ease-lift`·`--ease-pop`)을 쓰고, 동작 줄이기 설정을 켜면 움직임 없이 투명도만 바뀝니다. `AI가 조작하는 탭 따라보기`는 AI 패널이 열려 있고 그 패널에 보이는 대화에만 적용됩니다. 다른 대화나 터미널 에이전트는 보고 있는 탭을 바꾸지 않습니다. 끄면 항상 현재 탭을 유지합니다. 임의 `js` 명령은 작업 상태만 표시하며 구체적인 클릭 위치를 추적하지 않습니다.
 - 대화 저장은 600ms 단위로 묶어 백그라운드에서 처리하고 정상 종료 시 남은 내용을 저장합니다. 스트리밍 Markdown은 최대 초당 20회 갱신하며, 입력할 때 변경되지 않은 대화 목록과 아이콘을 다시 만들지 않습니다.
 - 입력창의 사진 버튼, 붙여넣기, 드래그로 PNG/JPEG/GIF/WebP를 첨부할 수 있습니다. 한 번에 6장, 장당 5MB까지 지원하며 사진만 보내는 것도 가능합니다. 원본은 앱 데이터의 `assistant/images`에 복사하고 대화에는 미리보기를 저장합니다. Claude에는 이미지 콘텐츠 블록을, Codex에는 `--image` 인수를 전달합니다.
 - 엔진을 바꾸면 `이 대화 이어받기`가 표시됩니다. 선택하면 실행 중이던 원래 작업을 중지하고, 메시지·미완성 답변·사진을 복사한 새 대화를 대상 엔진에 만듭니다. 기존 두 엔진의 방은 보존됩니다. 이어받은 뒤 요청을 입력하면 최근 대화와 사진을 전달하며, 전체 대화·도구 결과는 작업 폴더의 기록 파일에서 읽을 수 있습니다. 다른 엔진의 내부 세션이나 숨겨진 추론을 공유하는 기능은 아닙니다.
@@ -140,7 +140,7 @@ AI 패널 위쪽의 녹화 버튼(그 대화의 세션)이나 개요 카드의 *
 
 ```powershell
 .\cli.ps1 session '조사 작업'      # 세션 발급, 출력된 session 값을 아래처럼 지정
-$env:PLUCK_SESSION = 's1a2b3c4d5e6'
+$env:OINZI_SESSION = 's1a2b3c4d5e6'
 .\cli.ps1 list
 .\cli.ps1 new https://example.com
 .\cli.ps1 snapshot 2
@@ -190,14 +190,14 @@ $env:PLUCK_SESSION = 's1a2b3c4d5e6'
 
 ### MCP 서버
 
-`mcp.mjs`는 별도 패키지 없이 동작하는 stdio MCP 서버입니다. pluck을 켤 때마다 `%APPDATA%\pluck-windows-native\mcp.mjs`에 최신본을 써 두므로, 이 경로를 MCP 클라이언트에 등록하면 됩니다. pluck은 다른 에이전트의 설정 파일을 직접 고치지 않습니다.
+`mcp.mjs`는 별도 패키지 없이 동작하는 stdio MCP 서버입니다. Oinzi를 켤 때마다 `%APPDATA%\Oinzi\mcp.mjs`에 최신본을 써 두므로, 이 경로를 MCP 클라이언트에 등록하면 됩니다. Oinzi는 다른 에이전트의 설정 파일을 직접 고치지 않습니다.
 
 ```powershell
-claude mcp add pluck -- node "$env:APPDATA\pluck-windows-native\mcp.mjs"
-codex mcp add pluck -- node "$env:APPDATA\pluck-windows-native\mcp.mjs"
+claude mcp add oinzi -- node "$env:APPDATA\Oinzi\mcp.mjs"
+codex mcp add oinzi -- node "$env:APPDATA\Oinzi\mcp.mjs"
 ```
 
-MCP 서버 프로세스 하나가 세션 하나입니다. 사이드바에는 `MCP`라는 이름으로 나오고, `PLUCK_SESSION_LABEL`로 이름을 바꿀 수 있습니다. 서버가 종료되면 그 세션이 연 탭을 닫습니다.
+MCP 서버 프로세스 하나가 세션 하나입니다. 사이드바에는 `MCP`라는 이름으로 나오고, `OINZI_SESSION_LABEL`로 이름을 바꿀 수 있습니다. 서버가 종료되면 그 세션이 연 탭을 닫습니다.
 
 제공하는 도구는 `tabs`, `open`, `active_tab`, `goto`, `snapshot`, `click`, `click_at`, `hover`, `fill`, `type`, `select`, `press`, `scroll`, `back`, `forward`, `wait`, `screenshot`, `js`, `show`, `close`입니다. `screenshot`은 PNG 이미지로 돌려주고 `annotate` 옵션을 지원합니다.
 
@@ -220,7 +220,7 @@ try {
 '@ | node .\agent.mjs
 ```
 
-`node .\agent.mjs .\my-task.mjs`처럼 파일로 전달할 수도 있습니다. 먼저 `browser.session('작업 이름')`으로 세션을 엽니다. 반환된 `task`에는 `id`, `list`, `open`, `show`, `goto`, `snapshot`, `click`, `clickAt`, `hover`, `fill`, `type`, `select`, `press`, `scroll`, `back`, `forward`, `wait`, `js`, `screenshot`, `close`가 있습니다. 세션을 지정하지 않으면 실행마다 새 세션이 발급됩니다. `--keep-tabs`로 실행하면 발급된 세션 ID를 표준 오류에 출력하므로, 다음 실행에 `node .\agent.mjs --session <id> --keep-tabs .\step2.mjs`처럼 넘기면 같은 탭을 이어서 씁니다. `PLUCK_SESSION` 환경 변수로도 지정할 수 있고, AI 패널은 대화의 세션을 이 변수로 전달합니다. 세션마다 프로필(로그인 계정)이 하나씩 정해집니다. `--profile <이름>` 또는 `PLUCK_PROFILE` 환경 변수로 지정하고, 지정하지 않으면 세션을 만들 때 사이드바에서 보고 있던 프로필을 씁니다. AI 패널 대화는 처음 실행할 때의 프로필로 고정됩니다. 그래서 터미널 세션은 한 계정으로, 패널 대화는 다른 계정으로 동시에 작업할 수 있습니다. 예전 `browser.useOrCreateSpace(name)`은 `browser.session(name)`과 같습니다. Node.js는 이 자동화 스크립트 실행에만 사용하며 브라우저 앱 자체에는 필요하지 않습니다.
+`node .\agent.mjs .\my-task.mjs`처럼 파일로 전달할 수도 있습니다. 먼저 `browser.session('작업 이름')`으로 세션을 엽니다. 반환된 `task`에는 `id`, `list`, `open`, `show`, `goto`, `snapshot`, `click`, `clickAt`, `hover`, `fill`, `type`, `select`, `press`, `scroll`, `back`, `forward`, `wait`, `js`, `screenshot`, `close`가 있습니다. 세션을 지정하지 않으면 실행마다 새 세션이 발급됩니다. `--keep-tabs`로 실행하면 발급된 세션 ID를 표준 오류에 출력하므로, 다음 실행에 `node .\agent.mjs --session <id> --keep-tabs .\step2.mjs`처럼 넘기면 같은 탭을 이어서 씁니다. `OINZI_SESSION` 환경 변수로도 지정할 수 있고, AI 패널은 대화의 세션을 이 변수로 전달합니다. 세션마다 프로필(로그인 계정)이 하나씩 정해집니다. `--profile <이름>` 또는 `OINZI_PROFILE` 환경 변수로 지정하고, 지정하지 않으면 세션을 만들 때 사이드바에서 보고 있던 프로필을 씁니다. AI 패널 대화는 처음 실행할 때의 프로필로 고정됩니다. 그래서 터미널 세션은 한 계정으로, 패널 대화는 다른 계정으로 동시에 작업할 수 있습니다. 예전 `browser.useOrCreateSpace(name)`은 `browser.session(name)`과 같습니다. Node.js는 이 자동화 스크립트 실행에만 사용하며 브라우저 앱 자체에는 필요하지 않습니다.
 
 ### 자동 탭 정리
 
@@ -241,7 +241,7 @@ AI 응답 중에 보낸 메시지는 기본적으로 진행 중인 작업에 바
 
 AI 실행 상태와 선택한 대화를 저장합니다. 실행 도중 앱이 종료되면 다음 실행에서 해당 대화에 **중단된 작업 이어가기** 버튼이 나타납니다. 이어갈 때 현재 탭과 사이트의 임시저장 상태를 먼저 확인하도록 안내합니다. 실행 중인 AI가 있으면 자동화 API의 `shutdown`은 거절하며, 사용자가 창을 닫을 때는 확인합니다. 사용자 탭 중 마지막으로 보고 있던 탭도 복원합니다. 사이트에 저장되지 않은 편집 내용이나 실행 중인 프로세스 자체를 복구하지는 않습니다.
 
-에이전트 API에는 세션 상태 한 줄(`status(text)`, 개요 카드에 표시)도 있습니다. 명령 묶음(`batch(steps)`, 최대 50개, 기본은 첫 실패에서 멈춤)과 스크린샷 비교(`compare(id, baseline.png, { diff })`)도 있습니다. 스크린샷 비교는 이미지를 base64로 주고받으므로 pluck이 에이전트 대신 파일을 읽거나 쓰지 않습니다. MCP 도구 이름은 `set_status`, `batch`입니다.
+에이전트 API에는 세션 상태 한 줄(`status(text)`, 개요 카드에 표시)도 있습니다. 명령 묶음(`batch(steps)`, 최대 50개, 기본은 첫 실패에서 멈춤)과 스크린샷 비교(`compare(id, baseline.png, { diff })`)도 있습니다. 스크린샷 비교는 이미지를 base64로 주고받으므로 Oinzi가 에이전트 대신 파일을 읽거나 쓰지 않습니다. MCP 도구 이름은 `set_status`, `batch`입니다.
 
 구현한 기능은 다음과 같습니다.
 
@@ -251,8 +251,8 @@ AI 실행 상태와 선택한 대화를 저장합니다. 실행 도중 앱이 �
 - 실제 입력 이벤트로 하는 클릭·입력·키·호버·휠
 - 좌표 클릭과 번호 표시 스크린샷
 - 대기와 JavaScript 실행
-- MCP 서버 Chrome 프로필 이전, 확장 프로그램 관리, 공식 `pluck-browser` 스킬과의 호환은 아직 구현되지 않았습니다. WebView2는 Edge에 들어 있는 Chromium(Blink·V8) 엔진을 사용합니다. 페이지 렌더링과 JavaScript는 Chrome과 같지만, Chrome 웹 스토어 확장과 Google 계정 동기화는 쓸 수 없습니다.
+- MCP 서버 Chrome 프로필 이전, 확장 프로그램 관리, 공식 `oinzi-browser` 스킬과의 호환은 아직 구현되지 않았습니다. WebView2는 Edge에 들어 있는 Chromium(Blink·V8) 엔진을 사용합니다. 페이지 렌더링과 JavaScript는 Chrome과 같지만, Chrome 웹 스토어 확장과 Google 계정 동기화는 쓸 수 없습니다.
 
 ## 다른 PC에 설치
 
-`native/installer/build.ps1`을 실행하면 `native/dist/pluck-setup-<버전>.exe`가 만들어집니다(Inno Setup 6 필요: `winget install JRSoftware.InnoSetup`). 관리자 권한 없이 사용자 폴더에 설치되고, 시작 메뉴와 제거 항목이 생깁니다. 처음 실행하면 설정의 「시작하기」에서 Claude Code·Codex·Node.js 설치, Chrome·Edge 프로필 가져오기, 기본 브라우저 설정을 할 수 있습니다. AI CLI가 없어도 브라우저 기능은 모두 동작하고, AI 패널만 설치 안내를 보여 줍니다.
+`native/installer/build.ps1`을 실행하면 `native/dist/oinzi-setup-<버전>.exe`가 만들어집니다(Inno Setup 6 필요: `winget install JRSoftware.InnoSetup`). 관리자 권한 없이 사용자 폴더에 설치되고, 시작 메뉴와 제거 항목이 생깁니다. 처음 실행하면 설정의 「시작하기」에서 Claude Code·Codex·Node.js 설치, Chrome·Edge 프로필 가져오기, 기본 브라우저 설정을 할 수 있습니다. AI CLI가 없어도 브라우저 기능은 모두 동작하고, AI 패널만 설치 안내를 보여 줍니다.

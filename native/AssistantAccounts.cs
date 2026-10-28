@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // Several Claude/Codex logins side by side. Each extra account is its own CLI config folder (CLAUDE_CONFIG_DIR / CODEX_HOME),
 // so every login refreshes its tokens in place; copying credential files around breaks because refresh tokens rotate.
@@ -278,8 +278,8 @@ public sealed partial class BrowserForm
     private static readonly System.Text.RegularExpressions.Regex DeviceCode = new(@"\b[A-Z0-9]{4}-[A-Z0-9]{4,6}\b");
     private const string ClaudeCodeCallback = "https://platform.claude.com/oauth/code/callback";
 
-    // The login page opens in a pluck tab instead of the system browser. Claude without a console falls back to its
-    // paste-the-code flow, so pluck reads the code from the callback page's address and types it in. Codex uses device
+    // The login page opens in a Oinzi tab instead of the system browser. Claude without a console falls back to its
+    // paste-the-code flow, so Oinzi reads the code from the callback page's address and types it in. Codex uses device
     // authorization (a one-time code), the only flow that does not launch the system browser on its own.
     private void StartLogin(Account account)
     {

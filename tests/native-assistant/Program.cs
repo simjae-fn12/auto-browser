@@ -2,7 +2,7 @@ using System.Collections;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
-using PluckWindowsNative;
+using OinziBrowser;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -16,8 +16,8 @@ static class Program
     [STAThread]
     static void Main()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "pluck-assistant-test-" + Guid.NewGuid().ToString("N"));
-        Environment.SetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR", dir);
+        var dir = Path.Combine(Path.GetTempPath(), "Oinzi-assistant-test-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("OINZI_DATA_DIR", dir);
         ApplicationConfiguration.Initialize();
         using var form = new BrowserForm();
         form.Shown += async (_, _) =>
@@ -89,12 +89,12 @@ static class Program
 
                 var tab = await (Task<object?>)TaskFromCreate(form);
                 var view = (WebView2)tab!.GetType().GetProperty("View")!.GetValue(tab)!;
-                view.CoreWebView2.NavigateToString("<html><title>Interaction test</title><body style='padding:80px;font:20px system-ui'><h1>pluck interaction test</h1><input id='field'><button id='button' onclick=\"document.body.dataset.clicked='yes'\">Click me</button></body></html>");
+                view.CoreWebView2.NavigateToString("<html><title>Interaction test</title><body style='padding:80px;font:20px system-ui'><h1>Oinzi interaction test</h1><input id='field'><button id='button' onclick=\"document.body.dataset.clicked='yes'\">Click me</button></body></html>");
                 await Task.Delay(500);
                 Check((bool)(await (Task<bool>)Call(form, "ActAsync", tab, "fill", "#field", "hello")!), "fill succeeds with overlay");
                 Check((bool)(await (Task<bool>)Call(form, "ActAsync", tab, "click", "#button", "")!), "click succeeds with overlay");
                 Check(await view.CoreWebView2.ExecuteScriptAsync("document.body.dataset.clicked === 'yes' && document.querySelector('#field').value === 'hello'") == "true", "actions reach real page elements");
-                Check(await view.CoreWebView2.ExecuteScriptAsync("typeof window.__pluckActivity") == "\"function\"", "live visual overlay installed");
+                Check(await view.CoreWebView2.ExecuteScriptAsync("typeof window.__oinziActivity") == "\"function\"", "live visual overlay installed");
                 using (var image = File.Create(Path.Combine(dir, "activity.png"))) await view.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, image);
                 await chrome.CoreWebView2.ExecuteScriptAsync("toggleAssist(true)");
                 await Task.Delay(500);
@@ -212,10 +212,10 @@ static class Program
                 }
                 Check(view.Source.IsFile && await view.CoreWebView2.ExecuteScriptAsync("document.body.textContent.includes('Local preview fixture')") == "true",
                     "local HTML path opens as file preview without DNS lookup");
-                view.CoreWebView2.AddWebResourceRequestedFilter("https://pluck-test.invalid/*", CoreWebView2WebResourceContext.All);
+                view.CoreWebView2.AddWebResourceRequestedFilter("https://oinzi-test.invalid/*", CoreWebView2WebResourceContext.All);
                 view.CoreWebView2.WebResourceRequested += (_, request) => request.Response = view.CoreWebView2.Environment.CreateWebResourceResponse(
                     new MemoryStream(System.Text.Encoding.UTF8.GetBytes("<html><title>Saved draft</title></html>")), 200, "OK", "Content-Type: text/html");
-                view.CoreWebView2.Navigate("https://pluck-test.invalid/saved-blog-draft");
+                view.CoreWebView2.Navigate("https://oinzi-test.invalid/saved-blog-draft");
                 var tabControl = (TabControl)FormType.GetField("tabs", Private)!.GetValue(form)!;
                 tabControl.SelectedTab = (TabPage)tab.GetType().GetProperty("Page")!.GetValue(tab)!;
                 for (var attempt = 0; attempt < 50 && view.Source?.AbsolutePath != "/saved-blog-draft"; attempt++) await Task.Delay(100);

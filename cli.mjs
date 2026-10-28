@@ -8,10 +8,10 @@ if (!command || command === 'help') {
   process.exit(0);
 }
 
-const file = process.env.PLUCK_WINDOWS_CONNECTION || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'pluck-windows', 'connection.json');
+const file = process.env.OINZI_WINDOWS_CONNECTION || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'oinzi-windows', 'connection.json');
 let connection;
 try { connection = JSON.parse(fs.readFileSync(file, 'utf8')); }
-catch { console.error('pluck Windows가 실행 중이 아닙니다. npm start로 먼저 실행하세요.'); process.exit(1); }
+catch { console.error('Oinzi Windows가 실행 중이 아닙니다. npm start로 먼저 실행하세요.'); process.exit(1); }
 
 const [id, target, value] = args;
 const body = { command };

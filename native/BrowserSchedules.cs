@@ -1,10 +1,10 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // Scheduled AI tasks: a prompt that runs daily, weekly or every few hours in a new conversation of its own.
-// Runs only while pluck is open; a run missed while it was closed happens once at the next start.
+// Runs only while Oinzi is open; a run missed while it was closed happens once at the next start.
 public sealed partial class BrowserForm
 {
     private sealed class Schedule
@@ -43,8 +43,8 @@ public sealed partial class BrowserForm
     {
         try { if (File.Exists(SchedulesFile)) schedules = JsonSerializer.Deserialize<List<Schedule>>(File.ReadAllText(SchedulesFile)) ?? []; }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { schedules = []; }
-        // A run that was going when pluck closed is reported as interrupted rather than running forever.
-        foreach (var run in schedules.SelectMany(s => s.History).Where(run => run.Status == "running")) { run.Status = "error"; run.Error = "pluck이 종료되어 중단됐습니다."; }
+        // A run that was going when Oinzi closed is reported as interrupted rather than running forever.
+        foreach (var run in schedules.SelectMany(s => s.History).Where(run => run.Status == "running")) { run.Status = "error"; run.Error = "Oinzi가 종료되어 중단됐습니다."; }
         scheduleTimer.Tick += (_, _) => RunDueSchedules();
         scheduleTimer.Start();
         FormClosed += (_, _) => scheduleTimer.Dispose();
@@ -104,7 +104,7 @@ public sealed partial class BrowserForm
             OpenSession(SpaceOf(chat), SessionTitle(chat), "panel").Kind = "panel";
             if (!IsRecording(SpaceOf(chat))) ToggleRecording(SpaceOf(chat));
         }
-        StartAssistant(chat, schedule.Prompt, "[pluck] 예약 작업으로 자동 실행되었습니다. 사용자가 지켜보고 있지 않으니 결제·게시·전송처럼 되돌릴 수 없는 일은 하지 말고, 결과를 정리해 답하세요.\n\n", []);
+        StartAssistant(chat, schedule.Prompt, "[Oinzi] 예약 작업으로 자동 실행되었습니다. 사용자가 지켜보고 있지 않으니 결제·게시·전송처럼 되돌릴 수 없는 일은 하지 말고, 결과를 정리해 답하세요.\n\n", []);
         if (!aiRuns.ContainsKey(chat.Id)) FinishScheduleRun(chat, "CLI를 시작하지 못했습니다.");
         PostConversationList(schedule.Engine);
         PostSchedules();
@@ -186,13 +186,13 @@ public sealed partial class BrowserForm
     private static bool StartsWithWindows()
     {
         using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey);
-        return key?.GetValue("pluck") is string;
+        return key?.GetValue("Oinzi") is string;
     }
 
     private static void SetStartsWithWindows(bool enabled)
     {
         using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RunKey);
-        if (enabled) key.SetValue("pluck", $"\"{Environment.ProcessPath}\"");
-        else key.DeleteValue("pluck", false);
+        if (enabled) key.SetValue("Oinzi", $"\"{Environment.ProcessPath}\"");
+        else key.DeleteValue("Oinzi", false);
     }
 }

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // "Pick an element": the person clicks something on the page and the AI panel attaches what it is, so instructions
 // like "이 버튼 말고 저거" can point at the exact element. Runs on the tab the person is viewing.
@@ -94,7 +94,7 @@ public sealed partial class BrowserForm
         {
             var el = JsonNode.Parse(json);
             if (el?["selector"]?.ToString() is not { Length: > 0 } selector) return "";
-            return $"[pluck] 사용자가 페이지에서 고른 요소: <{el["tag"]}> \"{el["text"]}\" — CSS `{selector}`"
+            return $"[Oinzi] 사용자가 페이지에서 고른 요소: <{el["tag"]}> \"{el["text"]}\" — CSS `{selector}`"
                 + (el["href"]?.ToString() is { Length: > 0 } href ? $", 링크 {href}" : "")
                 + $" (tab id {el["tab"]}, {el["url"]}). 이 탭은 activeTab()으로 다루고, 이 선택자나 새 스냅샷의 ref로 지정하세요.\n\n";
         }

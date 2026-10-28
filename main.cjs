@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-app.setName('pluck-windows');
+app.setName('oinzi-windows');
 const tabs = new Map();
 let window;
 let activeId;
@@ -124,9 +124,9 @@ async function snapshot(tab) {
     const nodes = [...document.querySelectorAll('a,button,input,textarea,select,[role="button"],[contenteditable="true"]')]
       .filter(el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width && r.height && s.visibility !== 'hidden' && s.display !== 'none'; })
       .slice(0, 250);
-    document.querySelectorAll('[data-pluck-windows-ref]').forEach(el => el.removeAttribute('data-pluck-windows-ref'));
+    document.querySelectorAll('[data-oinzi-windows-ref]').forEach(el => el.removeAttribute('data-oinzi-windows-ref'));
     const elements = nodes.map((el, i) => {
-      const ref = String(i + 1); el.setAttribute('data-pluck-windows-ref', ref);
+      const ref = String(i + 1); el.setAttribute('data-oinzi-windows-ref', ref);
       return { ref, tag: el.tagName.toLowerCase(), role: el.getAttribute('role'),
         text: (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').trim().slice(0, 160),
         href: el.getAttribute('href') };
@@ -152,7 +152,7 @@ async function act(tab, command, target, value) {
     const target = ${JSON.stringify(selector)};
     const value = ${JSON.stringify(value)};
     const el = target.startsWith('@')
-      ? document.querySelector('[data-pluck-windows-ref="' + CSS.escape(target.slice(1)) + '"]')
+      ? document.querySelector('[data-oinzi-windows-ref="' + CSS.escape(target.slice(1)) + '"]')
       : document.querySelector(target);
     if (!el) throw new Error('Element not found. Take a new snapshot.');
     el.scrollIntoView({ block: 'center' });

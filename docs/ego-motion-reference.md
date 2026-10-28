@@ -1,4 +1,4 @@
-# ego lite 모션·그래픽 분석 (pluck UI 참고용)
+# ego lite 모션·그래픽 분석 (Oinzi UI 참고용)
 
 - 대상: `C:\Program Files\Citro Labs\ego lite\Application\0.6.0.20` (Citro Labs, Chromium 기반)
 - UI 소스: `local-ego-daemon\client` (Vite 빌드 SPA: JS 439개, CSS 4개)
@@ -49,11 +49,11 @@
 - 토큰 이름 체계(short/medium/long × 1-4, ease-standard)는 Material 3 모션 토큰과 같은 구조라 그 체계를 바탕으로 한 것으로 보인다.
 - 앱을 실행해서 관찰하지는 않았다. 실제 어느 화면에서 어떤 토큰을 쓰는지는 CSS 선택자로 추정한 범위까지만 안다.
 
-## 3. pluck에 적용할 제안 (pluck 자체 값)
+## 3. Oinzi에 적용할 제안 (Oinzi 자체 값)
 
-> 적용 상태: 페이지 위 AI 오버레이(`native/assistant/activity.js`)와 AI 패널 작업 상태(`chrome.html`의 "AI working state" 블록)에 반영했다. 표현은 pluck 것으로 새로 만들었다. 씨앗 마크(꽃잎 세 개가 공전), 오로라 테두리, 모서리 괄호, 스캔 빛이 그것이고, ego의 에셋·코드·문구는 쓰지 않았다.
+> 적용 상태: 페이지 위 AI 오버레이(`native/assistant/activity.js`)와 AI 패널 작업 상태(`chrome.html`의 "AI working state" 블록)에 반영했다. 표현은 Oinzi 것으로 새로 만들었다. 씨앗 마크(꽃잎 세 개가 공전), 오로라 테두리, 모서리 괄호, 스캔 빛이 그것이고, ego의 에셋·코드·문구는 쓰지 않았다.
 
-pluck은 지금 `--ease: cubic-bezier(.16,1,.3,1)` 하나만 쓴다. 이렇게 확장할 것을 제안한다.
+Oinzi는 지금 `--ease: cubic-bezier(.16,1,.3,1)` 하나만 쓴다. 이렇게 확장할 것을 제안한다.
 
 ```css
 :root {

@@ -6,11 +6,11 @@ using System.Text.RegularExpressions;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
-// Chrome extensions through WebView2 browser extensions. Every pluck profile is its own WebView2 profile, so each workspace
-// has its own set. WebView2 loads unpacked folders and keeps reading them, so pluck keeps a copy of each version under
-// dataDir\extensions\<id>\<version>. WebView2 has no toolbar, popups or Web Store install button: pluck draws the buttons
+// Chrome extensions through WebView2 browser extensions. Every Oinzi profile is its own WebView2 profile, so each workspace
+// has its own set. WebView2 loads unpacked folders and keeps reading them, so Oinzi keeps a copy of each version under
+// dataDir\extensions\<id>\<version>. WebView2 has no toolbar, popups or Web Store install button: Oinzi draws the buttons
 // in the sidebar, opens popups in a small window, and installs from a store link by downloading the CRX itself.
 public sealed partial class BrowserForm
 {
@@ -151,7 +151,7 @@ public sealed partial class BrowserForm
         if (profile == (Active()?.Profile ?? userProfile)) await PostToolbarExtensionsAsync(true);
     }
 
-    // Copies an unpacked extension into pluck's store and installs it, replacing an older version in that profile.
+    // Copies an unpacked extension into Oinzi's store and installs it, replacing an older version in that profile.
     private async Task<string> InstallExtensionFolderAsync(string profile, string source, string? expectedId)
     {
         var manifest = ReadManifest(source) ?? throw new InvalidDataException("manifest.json이 없습니다.");

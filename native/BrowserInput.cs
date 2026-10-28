@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Web.WebView2.Core;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // Agent input goes through the DevTools Input domain so pages receive trusted events (event.isTrusted),
 // the same as a person's mouse and keyboard. Script-made events are only a fallback.
@@ -10,8 +10,8 @@ public sealed partial class BrowserForm
 {
     // Finds a target in a frame: a snapshot ref (@3), "text=Visible words", or a CSS selector.
     private const string LocateScript = """
-        const __pluckLocate = (target) => {
-          if (target.startsWith('@')) return document.querySelector('[data-pluck-native-ref="' + CSS.escape(target.slice(1)) + '"]');
+        const __oinziLocate = (target) => {
+          if (target.startsWith('@')) return document.querySelector('[data-oinzi-ref="' + CSS.escape(target.slice(1)) + '"]');
           if (target.startsWith('text=')) {
             const wanted = target.slice(5).trim().toLowerCase();
             const candidates = [...document.querySelectorAll('a,button,input,textarea,select,summary,label,[role],[onclick],[tabindex],h1,h2,h3,h4,li,td,span,div')];
@@ -63,7 +63,7 @@ public sealed partial class BrowserForm
         var script = $$"""
             (() => {
               {{LocateScript}}
-              const el = __pluckLocate({{JsonSerializer.Serialize(selector)}});
+              const el = __oinziLocate({{JsonSerializer.Serialize(selector)}});
               if (!el) throw new Error('Element not found. Take a new snapshot.');
               el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
               const r = el.getBoundingClientRect();
@@ -78,9 +78,9 @@ public sealed partial class BrowserForm
                 }
               } catch { offsetKnown = false; }
               if ({{(probeClick ? "true" : "false")}}) {
-                window.__pluckTrusted = false;
+                window.__oinziTrusted = false;
                 // Only a trusted click that lands on the target counts; one that hits something else falls back.
-                const listener = e => { if (e.isTrusted && (e.target === el || el.contains(e.target))) window.__pluckTrusted = true; };
+                const listener = e => { if (e.isTrusted && (e.target === el || el.contains(e.target))) window.__oinziTrusted = true; };
                 document.addEventListener('click', listener, { capture: true, once: true });
               }
               return { x: x + ox, y: y + oy, covered, offsetKnown, w: r.width, h: r.height };
@@ -104,13 +104,13 @@ public sealed partial class BrowserForm
             await MouseClickAsync(core, box["x"]!.GetValue<double>(), box["y"]!.GetValue<double>());
             // A navigation replaces the document, so a missing probe means the click already took effect.
             string probe;
-            try { probe = await RunInFrameAsync(tab, frameId, "window.__pluckTrusted"); }
+            try { probe = await RunInFrameAsync(tab, frameId, "window.__oinziTrusted"); }
             catch (InvalidOperationException) { return "trusted"; }
             if (probe != "false") return "trusted";
         }
         var fallback = $$"""
             (() => {
-              {{LocateScript}} const el = __pluckLocate({{JsonSerializer.Serialize(selector)}}); if (!el) return false; el.focus?.(); el.click(); return true; })()
+              {{LocateScript}} const el = __oinziLocate({{JsonSerializer.Serialize(selector)}}); if (!el) return false; el.focus?.(); el.click(); return true; })()
             """;
         if (await RunInFrameAsync(tab, frameId, fallback) != "true") throw new InvalidOperationException("Element not found. Take a new snapshot.");
         return "script";
@@ -124,7 +124,7 @@ public sealed partial class BrowserForm
         var focus = $$"""
             (() => {
               {{LocateScript}}
-              const el = __pluckLocate({{JsonSerializer.Serialize(selector)}});
+              const el = __oinziLocate({{JsonSerializer.Serialize(selector)}});
               if (!el) throw new Error('Element not found. Take a new snapshot.');
               el.scrollIntoView({ block: 'center', behavior: 'instant' });
               el.focus();
@@ -144,7 +144,7 @@ public sealed partial class BrowserForm
         var check = $$"""
             (() => {
               {{LocateScript}}
-              const el = __pluckLocate({{JsonSerializer.Serialize(selector)}}); if (!el) return false;
+              const el = __oinziLocate({{JsonSerializer.Serialize(selector)}}); if (!el) return false;
               const wanted = {{JsonSerializer.Serialize(value)}};
               return {{(kind == "value" ? "el.value === wanted" : "(el.innerText || '').replace(/\\s+/g, ' ').trim() === wanted.replace(/\\s+/g, ' ').trim()")}};
             })()
@@ -154,7 +154,7 @@ public sealed partial class BrowserForm
         var fallback = $$"""
             (() => {
               {{LocateScript}}
-              const el = __pluckLocate({{JsonSerializer.Serialize(selector)}}); if (!el) return false;
+              const el = __oinziLocate({{JsonSerializer.Serialize(selector)}}); if (!el) return false;
               const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
               const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
               if (setter) setter.call(el, {{JsonSerializer.Serialize(value)}}); else el.value = {{JsonSerializer.Serialize(value)}};
@@ -181,7 +181,7 @@ public sealed partial class BrowserForm
         var script = $$"""
             (() => {
               {{LocateScript}}
-              const el = __pluckLocate({{JsonSerializer.Serialize(SelectorOf(target))}});
+              const el = __oinziLocate({{JsonSerializer.Serialize(SelectorOf(target))}});
               if (!el || el.tagName !== 'SELECT') throw new Error('Target is not a <select>. Click custom dropdowns instead.');
               const wanted = {{JsonSerializer.Serialize(value)}};
               const option = [...el.options].find(o => o.value === wanted) || [...el.options].find(o => o.text.trim() === wanted)
@@ -263,15 +263,15 @@ public sealed partial class BrowserForm
     // Draws each snapshot ref as a numbered badge, captures, then removes the badges.
     private const string AnnotateScript = """
         (() => {
-          document.getElementById('__pluck_marks')?.remove();
-          const layer = document.createElement('div'); layer.id = '__pluck_marks';
+          document.getElementById('__oinzi_marks')?.remove();
+          const layer = document.createElement('div'); layer.id = '__oinzi_marks';
           layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483646';
-          for (const el of document.querySelectorAll('[data-pluck-native-ref]')) {
+          for (const el of document.querySelectorAll('[data-oinzi-ref]')) {
             const r = el.getBoundingClientRect();
             if (r.width <= 0 || r.height <= 0 || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) continue;
             const box = document.createElement('div');
             box.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;outline:2px solid #e5484d;border-radius:3px`;
-            const tag = document.createElement('span'); tag.textContent = el.getAttribute('data-pluck-native-ref');
+            const tag = document.createElement('span'); tag.textContent = el.getAttribute('data-oinzi-ref');
             tag.style.cssText = 'position:absolute;left:-2px;top:-16px;background:#e5484d;color:#fff;font:600 11px/14px system-ui;padding:0 4px;border-radius:3px';
             box.append(tag); layer.append(box);
           }
@@ -307,7 +307,7 @@ public sealed partial class BrowserForm
         }
         finally
         {
-            if (annotate) await core.ExecuteScriptAsync("document.getElementById('__pluck_marks')?.remove()");
+            if (annotate) await core.ExecuteScriptAsync("document.getElementById('__oinzi_marks')?.remove()");
         }
     }
 }

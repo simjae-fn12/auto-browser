@@ -6,16 +6,16 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>pluck</AssemblyName>
-    <Product>pluck</Product>
-    <Title>pluck</Title>
+    <AssemblyName>oinzi</AssemblyName>
+    <Product>Oinzi</Product>
+    <Title>Oinzi</Title>
     <Version>0.9.0</Version>
-    <ApplicationIcon>pluck.ico</ApplicationIcon>
+    <ApplicationIcon>oinzi.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="chrome\chrome.html" LogicalName="chrome.html" />
-    <EmbeddedResource Include="pluck.ico" LogicalName="pluck.ico" />
+    <EmbeddedResource Include="oinzi.ico" LogicalName="oinzi.ico" />
     <EmbeddedResource Include="agent.mjs" LogicalName="agent.mjs" />
     <EmbeddedResource Include="mcp.mjs" LogicalName="mcp.mjs" />
     <EmbeddedResource Include="assistant\activity.js" LogicalName="activity.js" />

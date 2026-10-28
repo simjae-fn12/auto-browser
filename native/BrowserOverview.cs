@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // The overview shows every session as a card: the person's tabs, each AI panel conversation and each terminal agent.
 // It shares the palette's frozen-viewport mechanism, so `paletteOpen` covers both overlays.

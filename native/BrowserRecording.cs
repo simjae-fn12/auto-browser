@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Web.WebView2.Core;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // Records what a session does so the person can replay it later: frames of the tab the session is working in,
 // plus a timeline of the agent's actions and, for AI panel conversations, its messages.
@@ -28,7 +28,7 @@ public sealed partial class BrowserForm
         public long Elapsed => (long)(DateTime.UtcNow - Started).TotalMilliseconds;
     }
 
-    private const string RecordingHost = "https://recordings.pluck/";
+    private const string RecordingHost = "https://recordings.oinzi/";
     // Active recordings, by session space.
     private readonly Dictionary<string, Recording> recordings = new(StringComparer.Ordinal);
     private FileStream? exportStream;
@@ -159,7 +159,7 @@ public sealed partial class BrowserForm
     {
         var match = System.Text.RegularExpressions.Regex.Match(target, "^@(?<frame>f[0-9]+):(?<ref>[0-9]+)$");
         if (target.Length == 0 || (match.Success && match.Groups["frame"].Value != "f0") || tab.View.CoreWebView2 is not { } core) return target;
-        var selector = match.Success ? $"[data-pluck-native-ref=\"{match.Groups["ref"].Value}\"]" : target;
+        var selector = match.Success ? $"[data-oinzi-ref=\"{match.Groups["ref"].Value}\"]" : target;
         var script = $$"""
             (() => {
               try {
@@ -276,7 +276,7 @@ public sealed partial class BrowserForm
         exportStream = null;
         using var dialog = new SaveFileDialog
         {
-            Filter = "WebM 동영상|*.webm", InitialDirectory = RecordingVideosDir, FileName = string.Concat((title.Length == 0 ? "pluck 녹화" : title).Split(Path.GetInvalidFileNameChars())) + ".webm"
+            Filter = "WebM 동영상|*.webm", InitialDirectory = RecordingVideosDir, FileName = string.Concat((title.Length == 0 ? "Oinzi 녹화" : title).Split(Path.GetInvalidFileNameChars())) + ".webm"
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {

@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
-// Turns a recording's JPEG frames into an MP4 in Documents\pluck\녹화 with ffmpeg, captions burned in.
+// Turns a recording's JPEG frames into an MP4 in Documents\Oinzi\녹화 with ffmpeg, captions burned in.
 // Idle stretches (the AI thinking, an unchanged page) are shortened so the video shows the work, not the waiting.
 public sealed partial class BrowserForm
 {

@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // The settings page (Ctrl+,). Preferences live in settings.json; accounts have their own file (AssistantAccounts.cs).
 // It opens over a frozen viewport like the overview, so `paletteOpen` covers it too.
@@ -146,7 +146,7 @@ public sealed partial class BrowserForm
                 if (path != null && Directory.Exists(path)) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
                 return;
             case "settings.copyMcp":
-                Clipboard.SetText($"{(Read(message, "engine") == "codex" ? "codex" : "claude")} mcp add pluck -- node \"{Path.Combine(dataDir, "mcp.mjs")}\"");
+                Clipboard.SetText($"{(Read(message, "engine") == "codex" ? "codex" : "claude")} mcp add oinzi -- node \"{Path.Combine(dataDir, "mcp.mjs")}\"");
                 PostChrome(new { type = "settings.note", text = "등록 명령을 복사했습니다. 터미널에 붙여 넣어 실행하세요." });
                 return;
         }
@@ -204,12 +204,12 @@ public sealed partial class BrowserForm
     private NotifyIcon? notifyIcon;
     private Conversation? notifiedChat;
 
-    // A tray balloon shows as a Windows notification; clicking it brings pluck back on that conversation.
+    // A tray balloon shows as a Windows notification; clicking it brings Oinzi back on that conversation.
     private void ShowNotification(string title, string text, Conversation? chat = null)
     {
         if (notifyIcon == null)
         {
-            notifyIcon = new NotifyIcon { Icon = Icon, Text = "pluck", Visible = true };
+            notifyIcon = new NotifyIcon { Icon = Icon, Text = "Oinzi", Visible = true };
             notifyIcon.BalloonTipClicked += (_, _) => RevealConversation(notifiedChat);
             notifyIcon.Click += (_, _) => RevealConversation(null);
             FormClosed += (_, _) => notifyIcon.Dispose();

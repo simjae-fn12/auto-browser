@@ -1,11 +1,11 @@
-# pluck Windows
+# Oinzi Windows
 
 Windows용 브라우저의 현재 구현은 [`native/`](./native/README.md)에 있습니다. Windows Forms 창과 Microsoft Edge WebView2 엔진을 사용하며 Electron은 필요하지 않습니다. 사람 탭과 에이전트 탭은 같은 영구 프로필을 공유합니다.
 
 ```powershell
 cd .\native
 dotnet publish .\native.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o .\publish
-.\publish\pluck.exe
+.\publish\oinzi.exe
 .\cli.ps1 list
 ```
 

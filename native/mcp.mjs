@@ -1,5 +1,5 @@
-// pluck as an MCP server over stdio, so Claude Code, Codex or any MCP client can drive the browser with tool calls.
-// Register it yourself, e.g. `claude mcp add pluck -- node C:\path\to\mcp.mjs`; pluck never edits agent configs.
+// Oinzi as an MCP server over stdio, so Claude Code, Codex or any MCP client can drive the browser with tool calls.
+// Register it yourself, e.g. `claude mcp add oinzi -- node C:\path\to\mcp.mjs`; Oinzi never edits agent configs.
 // Each server process is one browser session: its tabs are invisible to other sessions and closed when it exits.
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -8,17 +8,17 @@ import readline from 'node:readline';
 import { randomUUID } from 'node:crypto';
 
 const owner = randomUUID();
-const connectionPath = process.env.PLUCK_NATIVE_CONNECTION
-  || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'pluck-windows-native', 'connection.json');
-let sessionId = process.env.PLUCK_SESSION || '';
-const sessionLabel = process.env.PLUCK_SESSION_LABEL || 'MCP';
-const sessionProfile = process.env.PLUCK_PROFILE || '';
+const connectionPath = process.env.OINZI_CONNECTION
+  || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Oinzi', 'connection.json');
+let sessionId = process.env.OINZI_SESSION || '';
+const sessionLabel = process.env.OINZI_SESSION_LABEL || 'MCP';
+const sessionProfile = process.env.OINZI_PROFILE || '';
 
 async function call(command, args = {}) {
-  // Read the connection every call: pluck writes a new port and token each time it starts.
+  // Read the connection every call: Oinzi writes a new port and token each time it starts.
   let connection;
   try { connection = JSON.parse(await fs.readFile(connectionPath, 'utf8')); }
-  catch { throw new Error('pluck is not running. Start pluck.exe first.'); }
+  catch { throw new Error('Oinzi is not running. Start oinzi.exe first.'); }
   const response = await fetch(`http://127.0.0.1:${connection.port}/`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${connection.token}` },
@@ -44,9 +44,9 @@ const tools = [
   { name: 'tabs', description: "List this session's tabs.", props: {}, run: () => send('list') },
   { name: 'profiles', description: "List the person's browser profiles (separate logins, like Chrome profiles) and the site accounts saved in each: { name, note, logins: [{ credential, site, username }] }. Passwords are never returned.",
     props: {}, run: () => send('profiles') },
-  { name: 'open', description: 'Open a new background tab in this session. Does not change what the person is looking at. profile picks one of the person’s browser profiles by name or id; omit to use this session’s profile (set with PLUCK_PROFILE).',
+  { name: 'open', description: 'Open a new background tab in this session. Does not change what the person is looking at. profile picks one of the person’s browser profiles by name or id; omit to use this session’s profile (set with OINZI_PROFILE).',
     props: { url: { type: 'string' }, profile: { type: 'string' } }, required: ['url'], run: a => send('new', { url: a.url, profile: a.profile }) },
-  { name: 'login', description: 'Fill the login form on the page with a saved account (credential id from profiles). pluck types the username and password itself; it only works on that account’s site in that account’s profile. Submit the form afterwards.',
+  { name: 'login', description: 'Fill the login form on the page with a saved account (credential id from profiles). Oinzi types the username and password itself; it only works on that account’s site in that account’s profile. Submit the form afterwards.',
     props: { id, credential: { type: 'string' } }, required: ['id', 'credential'], run: a => send('login', a) },
   { name: 'active_tab', description: 'Get the tab the person is currently viewing and allow this session to drive it. It cannot be closed.',
     props: {}, run: () => send('active') },
@@ -97,8 +97,8 @@ async function handle(message) {
       result = {
         protocolVersion: params?.protocolVersion || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'pluck', version: '0.2.0' },
-        instructions: 'Drive the pluck browser. It shares the person\'s logged-in profile: never buy, pay, post or send messages without their confirmation. Typical flow: open → snapshot → click/fill by ref → snapshot {diff:true}.',
+        serverInfo: { name: 'oinzi', version: '0.2.0' },
+        instructions: 'Drive the Oinzi browser. It shares the person\'s logged-in profile: never buy, pay, post or send messages without their confirmation. Typical flow: open → snapshot → click/fill by ref → snapshot {diff:true}.',
       };
     } else if (method === 'ping') result = {};
     else if (method === 'tools/list') {

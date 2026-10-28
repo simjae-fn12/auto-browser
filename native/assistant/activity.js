@@ -1,11 +1,11 @@
 (() => {
-  if (window.__pluckActivity?.version === 2) return;
-  document.getElementById('__pluck_activity')?.remove();
+  if (window.__oinziActivity?.version === 2) return;
+  document.getElementById('__oinzi_activity')?.remove();
   const host = document.createElement('div');
-  host.id = '__pluck_activity';
+  host.id = '__oinzi_activity';
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none';
   const shadow = host.attachShadow({ mode: 'closed' });
-  // pluck's own motion set (docs/ego-motion-reference.md §3): four durations, one base curve and two overshoot steps.
+  // Oinzi's own motion set (docs/ego-motion-reference.md §3): four durations, one base curve and two overshoot steps.
   shadow.innerHTML = `<style>
     :host { --t-instant: 90ms; --t-quick: 160ms; --t-move: 280ms; --t-scene: 480ms;
       --ease: cubic-bezier(.16,1,.3,1); --ease-lift: cubic-bezier(.35,1.12,.3,1); --ease-pop: cubic-bezier(.38,1.35,.25,1);
@@ -25,7 +25,7 @@
       box-shadow: inset 0 0 28px 2px color-mix(in srgb, var(--violet) 26%, transparent), inset 0 0 90px color-mix(in srgb, var(--mint) 8%, transparent) }
     .done .ring-mask::before { background: var(--mint); animation: none }
 
-    /* Status pill: frosted, with the pluck seed mark and a label that shimmers while work is in progress. */
+    /* Status pill: frosted, with the Oinzi seed mark and a label that shimmers while work is in progress. */
     .pill { position: fixed; top: 14px; left: 50%; display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 16px 0 12px;
       border-radius: 19px; color: #f5f3ff; font: 500 13px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; white-space: nowrap;
       background: color-mix(in srgb, var(--ink) 88%, transparent); backdrop-filter: blur(14px) saturate(1.4);
@@ -41,7 +41,7 @@
     .label.swap { animation: shimmer 2s linear infinite, swap var(--t-quick) var(--ease) }
     .done .label.swap { animation: swap var(--t-quick) var(--ease) }
 
-    /* Seed: three petals orbiting a core — pluck's mark. It folds into a check when the work is done. */
+    /* Seed: three petals orbiting a core — Oinzi's mark. It folds into a check when the work is done. */
     .seed { position: relative; width: 18px; height: 18px; flex: none }
     .seed i { position: absolute; left: 6px; top: 6px; width: 6px; height: 6px; border-radius: 50% 50% 50% 0;
       background: linear-gradient(135deg, var(--lilac), var(--violet)); transform-origin: 3px 3px; animation: orbit 1.6s var(--ease) infinite }
@@ -70,7 +70,7 @@
     .target.below .verb { top: auto; bottom: -30px }
     .typing .fill::after { content: ''; position: absolute; left: 10px; top: 25%; width: 2px; height: 50%; border-radius: 1px; background: var(--violet); animation: caret .9s steps(1) infinite }
 
-    /* Cursor: the pluck pointer glides with a slight overshoot and presses with a double ripple. */
+    /* Cursor: the Oinzi pointer glides with a slight overshoot and presses with a double ripple. */
     .cursor { position: fixed; left: 0; top: 0; opacity: 0; transform: translate(var(--x), var(--y));
       transition: transform var(--t-scene) var(--ease-lift), opacity var(--t-quick) }
     .cursor.show { opacity: 1 }
@@ -126,7 +126,7 @@
     restart(label, 'swap');
   };
   const locate = (t) => t === ':focus' ? document.activeElement
-    : t.startsWith('@') ? document.querySelector('[data-pluck-native-ref="' + CSS.escape(t.slice(1)) + '"]')
+    : t.startsWith('@') ? document.querySelector('[data-oinzi-ref="' + CSS.escape(t.slice(1)) + '"]')
     : t.startsWith('text=') ? null : document.querySelector(t);
 
   const api = (text, selector, done = false, command = '') => {
@@ -165,5 +165,5 @@
     return true;
   };
   api.version = 2;
-  window.__pluckActivity = api;
+  window.__oinziActivity = api;
 })();

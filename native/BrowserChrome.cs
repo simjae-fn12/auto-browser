@@ -4,7 +4,7 @@ using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace PluckWindowsNative;
+namespace OinziBrowser;
 
 // The browser chrome (sidebar, URL pill, command palette) is an HTML page rendered by its own WebView2.
 // Page WebViews live in `viewport`, a native panel positioned over the hole the chrome page reports.
@@ -26,7 +26,7 @@ public sealed partial class BrowserForm
     {
         Font = new Font("Segoe UI", 10);
         StartPosition = FormStartPosition.CenterScreen;
-        using (var icon = typeof(BrowserForm).Assembly.GetManifestResourceStream("pluck.ico"))
+        using (var icon = typeof(BrowserForm).Assembly.GetManifestResourceStream("oinzi.ico"))
             if (icon != null) Icon = new Icon(icon);
         var dark = SystemUsesDarkTheme();
         BackColor = dark ? Color.FromArgb(19, 22, 20) : Color.FromArgb(236, 237, 231);
@@ -47,7 +47,7 @@ public sealed partial class BrowserForm
         var core = chromeView.CoreWebView2;
         var settings = core.Settings;
         settings.AreDefaultContextMenusEnabled = false;
-        settings.AreDevToolsEnabled = Environment.GetEnvironmentVariable("PLUCK_CHROME_DEVTOOLS") == "1";
+        settings.AreDevToolsEnabled = Environment.GetEnvironmentVariable("OINZI_CHROME_DEVTOOLS") == "1";
         settings.AreBrowserAcceleratorKeysEnabled = false;
         settings.IsZoomControlEnabled = false;
         settings.IsPinchZoomEnabled = false;
