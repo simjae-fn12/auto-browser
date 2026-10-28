@@ -27,6 +27,8 @@ public sealed partial class BrowserForm
         public bool NotifyDone { get; set; } = true;
         public bool DoneSound { get; set; } = true;
         public string CustomInstructions { get; set; } = "";
+        // The 「시작하기」 page (other browsers' profiles, default browser) opens by itself only on the first start.
+        public bool SetupOffered { get; set; }
     }
 
     private static readonly Dictionary<string, string> SearchEngines = new()
@@ -102,6 +104,7 @@ public sealed partial class BrowserForm
         PostChrome(new { type = "settings", shot, section, prefs = PrefsMessage(), info = SettingsInfo() });
         PostChrome(AccountsMessage());
         PostSchedules();
+        PostSetupState();
         foreach (var account in accounts.Items.Where(a => a.LoggedIn == null)) _ = CheckAccountAsync(account);
     }
 

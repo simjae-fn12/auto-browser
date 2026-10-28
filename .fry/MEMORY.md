@@ -142,3 +142,16 @@
 - 요소 고르기는 CDP `Runtime.evaluate(awaitPromise)`로 페이지 안의 Promise가 끝날 때까지 기다린다(클릭하거나 Esc, 최대 2분). 페이지 클릭은 capture 단계에서 막아서 실제로 눌리지 않는다.
 - `compare`는 이미지를 base64로 주고받는다. pluck이 에이전트의 경로를 대신 읽거나 쓰면 Claude 제한 모드의 샌드박스를 우회하게 되기 때문이다. GDI+ Bitmap은 스트림이 닫히면 깨지므로 픽셀을 복사해 둔다.
 - 계정 사용량 바로 조회(OAuth usage API)는 넣지 않았다. 로그인 토큰을 비공개 엔드포인트로 보내야 해서다. 다른 브라우저 쿠키 가져오기도 하지 않는다. Chrome·Edge의 v20 앱 전용 암호화는 다른 프로그램이 읽지 못하게 하려는 보호 장치다.
+
+# 시작하기: Chrome·Edge 프로필 가져오기 · 기본 브라우저 · 링크 넘겨받기 (BrowserSetup.cs)
+
+## WHY / 설계
+- 다른 브라우저에서 읽는 건 `Local State`의 `profile.info_cache`(프로필 이름·계정 이메일)뿐. 쿠키·비밀번호는 v20 앱 바인딩 암호화라 우회하지 않는다 → 비밀번호는 「비밀번호 내보내기」(그 브라우저 프로필로 `--profile-directory=… chrome://password-manager/settings` 실행) → 받은 CSV를 「CSV 가져오기」.
+- `BrowserProfile.Source = "chrome:Profile 3"`. 같은 이메일은 Chrome·Edge 어디서 왔든 프로필 하나(노트에 이메일이 있으면 가져온 것으로 침). Source 이전에 스크립트로 가져온 프로필은 `LinkBrowserProfiles()`가 시작할 때 이메일로 Source를 채운다.
+- 기본 브라우저는 Windows가 사용자만 바꿀 수 있게 막아 둠 → HKCU에 후보로 등록(`StartMenuInternet\pluck`, `RegisteredApplications`, ProgId `pluckURL`/`pluckHTML`) 후 `ms-settings:defaultapps?registeredAppUser=pluck`를 연다. 현재 기본 여부는 `UrlAssociations\https\UserChoice` ProgId로 판단.
+- 첫 실행(`prefs.SetupOffered == false`)에 할 일이 있으면 설정 「시작하기」를 한 번 자동으로 연다.
+
+## 흐름: 한 데이터 폴더에 pluck 하나
+- `Program.Main`: 데이터 폴더 경로 해시로 만든 Mutex `Local\pluck-<hash>`. 이미 있으면 같은 이름 파이프로 링크(JSON 배열)를 넘기고 종료. 넘기기에 실패하면(닫히는 중) Mutex를 15초 기다렸다가 직접 실행.
+- 받는 쪽 `ListenForLinks`는 초기화 초반에 시작하고, 탭 복원 전 도착한 링크는 `LaunchLinks`에 쌓았다가 복원 뒤 연다.
+- 함정: 테스트 인스턴스(PLUCK_NATIVE_DATA_DIR)는 다른 해시라 실제 pluck과 안 부딪힌다. 등록된 exe 경로는 그 파일이 없어졌을 때만 다시 쓴다(디버그 빌드가 기본 브라우저 등록을 가로채지 않게). node의 execFileSync로 env를 넘기면 다른 데이터 폴더로 떠서 넘기기 테스트가 틀어졌음 → PowerShell Start-Process로 테스트.

@@ -990,6 +990,7 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
     <nav class="st-nav">
       <h2>설정</h2>
       <label class="st-search"><svg><use href="#i-search"/></svg><input id="stQuery" placeholder="설정 검색" spellcheck="false" autocomplete="off"></label>
+      <button class="sec" data-sec="start">시작하기</button>
       <button class="sec" data-sec="general">일반</button>
       <button class="sec" data-sec="ai">AI</button>
       <button class="sec" data-sec="accounts">AI 계정</button>
@@ -1004,6 +1005,25 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
     <div class="st-main">
       <div class="st-top"><span class="st-note" role="status"></span><kbd>Ctrl ,</kbd><button class="icon-btn" id="stClose" title="닫기 (Esc)"><svg><use href="#i-x"/></svg></button></div>
       <div class="st-body">
+
+        <section class="st-sec" data-sec="start">
+          <h3>시작하기</h3>
+          <p class="lead">쓰던 브라우저의 프로필을 pluck 프로필로 옮겨 오고, 다른 앱에서 누른 링크가 pluck에서 열리게 합니다. 프로필 이름과 계정 이메일만 가져옵니다. 로그인 상태(쿠키)는 옮겨 오지 않으니 프로필마다 pluck에서 한 번씩 로그인하세요.</p>
+          <div class="st-group">
+            <div class="st-row" data-kw="기본 브라우저 default browser 링크">
+              <div class="lbl"><b>기본 브라우저</b><span id="setupDefault"></span></div>
+              <div class="st-actions"><button class="st-btn" id="setupDefaultBtn">기본 브라우저로 설정</button></div>
+            </div>
+            <div class="st-row" data-kw="크롬 chrome 엣지 edge 프로필 가져오기 import 옮기기">
+              <div class="lbl"><b>Chrome·Edge 프로필 가져오기</b><span id="setupFound"></span></div>
+              <div class="st-actions"><button class="st-btn" id="setupImportBtn">가져오기</button></div>
+            </div>
+            <div class="st-row" data-kw="비밀번호 password csv 내보내기 export">
+              <div class="lbl"><b>사이트 비밀번호</b><span>프로필·사이트 계정에서 가져온 프로필마다 「비밀번호 내보내기」를 누르면 그 브라우저 프로필의 내보내기 화면이 열립니다. 받은 CSV는 「CSV 가져오기」로 넣으세요.</span></div>
+              <div class="st-actions"><button class="st-btn" id="setupProfilesBtn">프로필 열기</button></div>
+            </div>
+          </div>
+        </section>
 
         <section class="st-sec" data-sec="general">
           <h3>일반</h3>
@@ -2367,6 +2387,7 @@ function renderProfiles() {
       + (p.isDefault ? '' : `<button class="st-btn danger" data-op="remove">삭제</button>`) + `</div>`
       + `<input class="pnote" value="${escapeHtml(p.note)}" maxlength="300" placeholder="AI가 참고할 설명 (예: fn12 회사 계정. 네이버 블로그·스마트스토어 운영)">`
       + logins + (prof.editing === 'new:' + p.id ? loginForm(p.id) : `<div class="login"><button class="st-btn" data-op="addLogin">+ 사이트 계정 추가</button>`
+        + (p.source ? `<button class="st-btn" data-op="exportPw" title="이 프로필을 가져온 ${escapeHtml(p.source)} 프로필의 비밀번호 내보내기 화면을 엽니다">${escapeHtml(p.source)} 비밀번호 내보내기</button>` : '')
         + `<button class="st-btn" data-op="importCsv" title="Chrome·Edge 비밀번호 관리자에서 내보낸 CSV를 이 프로필로 가져옵니다">CSV 가져오기</button></div>`)
       + `</div>`;
   }).join('');
@@ -2395,6 +2416,7 @@ $('#stProfiles').addEventListener('click', event => {
     case 'remove': arm(button, 'prof/' + id, () => send('prof.remove', { id })); break;
     case 'addLogin': prof.editing = 'new:' + id; renderProfiles(); break;
     case 'importCsv': send('cred.import', { id }); break;
+    case 'exportPw': send('setup.exportPasswords', { id }); break;
     case 'edit': prof.editing = loginId; renderProfiles(); break;
     case 'del': arm(button, 'cred/' + loginId, () => send('cred.remove', { id: loginId })); break;
     case 'cancel': prof.editing = null; document.activeElement?.blur(); renderProfiles(); break;
@@ -2518,6 +2540,19 @@ $('#stSchedules').addEventListener('click', event => {
 $('#stSchedules').addEventListener('focusout', () => setTimeout(() => {
   if (sched.dirty && !$('#stSchedules').contains(document.activeElement)) renderSchedules();
 }, 0));
+function renderSetup(state) {
+  $('#setupDefault').textContent = state.isDefault ? 'pluck이 기본 브라우저입니다. 다른 앱에서 누른 링크가 pluck에서 열립니다.'
+    : '다른 앱에서 누른 링크를 pluck에서 엽니다. 누르면 Windows 설정이 열리니 pluck을 골라 주세요.';
+  $('#setupDefaultBtn').textContent = state.isDefault ? 'Windows 설정 열기' : '기본 브라우저로 설정';
+  const fresh = state.browsers.reduce((sum, browser) => sum + browser.fresh, 0);
+  $('#setupFound').textContent = state.browsers.length === 0 ? '이 PC에서 Chrome·Edge 프로필을 찾지 못했습니다.'
+    : state.browsers.map(browser => `${browser.label} 프로필 ${browser.count}개`).join(', ')
+      + (fresh ? ` 중 ${fresh}개를 새 pluck 프로필로 만듭니다.` : ' 모두 가져왔습니다.');
+  $('#setupImportBtn').disabled = fresh === 0;
+}
+$('#setupDefaultBtn').addEventListener('click', () => send('setup.default'));
+$('#setupImportBtn').addEventListener('click', () => send('setup.import'));
+$('#setupProfilesBtn').addEventListener('click', () => showSection('profiles'));
 $('#schedStartup').addEventListener('change', event => send('sched.startup', { enabled: event.target.checked }));
 
 /* ---------- AI panel ---------- */
@@ -3500,6 +3535,7 @@ webview?.addEventListener('message', event => {
   else if (message.type === 'accounts') { st.accounts = message.engines; if (st.open) renderAccounts(); }
   else if (message.type === 'acct.error') showNote(message.text, true);
   else if (message.type === 'settings.close') closeSettings();
+  else if (message.type === 'setup.state') renderSetup(message);
   else if (message.type === 'schedules') { sched.items = message.items; $('#schedStartup').checked = !!message.startup; renderSchedules(); }
   else if (message.type === 'profiles') { prof.items = message.items; prof.current = message.current; renderProfiles(); }
   else if (message.type === 'toast') showToast(message.text);

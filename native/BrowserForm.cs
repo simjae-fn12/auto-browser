@@ -69,8 +69,7 @@ public sealed partial class BrowserForm : Form
 
     private const string Home = "https://www.google.com/";
     private static readonly System.Text.RegularExpressions.Regex SessionIdPattern = new("^[A-Za-z0-9_-]{6,64}$");
-    private readonly string dataDir = Environment.GetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR")
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "pluck-windows-native");
+    private readonly string dataDir = DataDirectory;
     // What the person opens themselves (exported videos, AI output) lives in Documentspluck; profile, history
     // and raw recording frames stay in dataDir because they hold login state and everything that was on screen.
     private static readonly string userFilesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "pluck");
@@ -99,6 +98,8 @@ public sealed partial class BrowserForm : Form
         tabs.SelectedIndexChanged += (_, _) => { FollowWorkspace(); RefreshAddress(); };
         KeyDown += OnShortcut;
         Shown += async (_, _) => await InitializeAsync();
+        // Coming back from Windows Settings after choosing the default browser.
+        Activated += (_, _) => { if (chromeReady && paletteOpen) PostSetupState(); };
         FormClosing += (_, e) =>
         {
             if (aiRuns.Count > 0 && e.CloseReason == CloseReason.UserClosing && MessageBox.Show(this,
@@ -128,6 +129,7 @@ public sealed partial class BrowserForm : Form
             LoadPrefs();
             LoadProfiles();
             LoadSchedules();
+            ListenForLinks();
             try { foreach (var dir in new[] { RecordingVideosDir, AiWorkDir, ScreenshotsDir }) Directory.CreateDirectory(dir); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(dataDir, "profile"));
@@ -144,9 +146,13 @@ public sealed partial class BrowserForm : Form
                 await CreateTabAsync(restored[i].Url, restored[i].Space, restored[i].Active || (!restored.Any(tab => tab.Active) && i == 0),
                     profile: FindProfile(restored[i].Profile)?.Id ?? DefaultProfile);
             }
+            await OpenLaunchLinksAsync();
             Active()?.View.Focus();
             StartServer();
             cleanupTimer.Start();
+            try { RefreshBrowserRegistration(); }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException) { }
+            if (!prefs.SetupOffered) _ = OfferSetupAsync();
         }
         catch (Exception ex)
         {

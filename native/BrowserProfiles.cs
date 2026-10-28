@@ -18,6 +18,8 @@ public sealed partial class BrowserForm
         public string Color { get; set; } = "";
         // What the profile is for, written for the AI as much as for the person ("fn12 회사 계정, 네이버 블로그 운영").
         public string Note { get; set; } = "";
+        // The other browser's profile it was imported from ("chrome:Profile 3"), used to open that profile's password export.
+        public string Source { get; set; } = "";
     }
 
     private sealed class Credential
@@ -55,6 +57,7 @@ public sealed partial class BrowserForm
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { profileBook = new(); }
         if (!profileBook.Items.Any(p => p.Id == DefaultProfile))
             profileBook.Items.Insert(0, new BrowserProfile { Id = DefaultProfile, Name = "기본", Color = ProfileColors[0] });
+        LinkBrowserProfiles();
         foreach (var folder in profileBook.PendingDelete.ToArray())
         {
             try
@@ -161,7 +164,7 @@ public sealed partial class BrowserForm
         type = "profiles", current = userProfile,
         items = profileBook.Items.Select(p => new
         {
-            id = p.Id, name = p.Name, color = p.Color, note = p.Note, isDefault = p.Id == DefaultProfile,
+            id = p.Id, name = p.Name, color = p.Color, note = p.Note, isDefault = p.Id == DefaultProfile, source = SourceBrowser(p)?.Label,
             tabs = browserTabs.Values.Count(tab => tab.Profile == p.Id),
             logins = profileBook.Credentials.Where(c => c.Profile == p.Id)
                 .Select(c => new { id = c.Id, site = c.Site, username = c.Username, note = c.Note, hasPassword = c.Secret.Length > 0 }).ToArray()
