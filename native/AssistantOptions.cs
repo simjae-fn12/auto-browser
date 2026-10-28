@@ -105,6 +105,7 @@ public sealed partial class BrowserForm
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8
         };
+        AddCodexDaemonFlag(info);
         info.ArgumentList.Add("app-server");
         IsolateAssistantEnvironment(info);
         if (codexHome != null) { Directory.CreateDirectory(codexHome); info.Environment["CODEX_HOME"] = codexHome; }

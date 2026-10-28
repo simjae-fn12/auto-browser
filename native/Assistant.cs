@@ -74,6 +74,34 @@ public sealed partial class BrowserForm
         return reader.ReadToEnd();
     }
 
+    // Codex 0.16x runs through a shared background server by default. A server Oinzi cannot open (the Codex desktop app's,
+    // or one started as administrator) fails with "access denied (os error 5)", so Oinzi asks for its own process.
+    private static readonly Dictionary<string, bool> codexNoDaemon = [];
+
+    private static void AddCodexDaemonFlag(ProcessStartInfo info)
+    {
+        bool supported;
+        lock (codexNoDaemon)
+        {
+            if (!codexNoDaemon.TryGetValue(info.FileName, out supported))
+            {
+                try
+                {
+                    using var help = Process.Start(new ProcessStartInfo(info.FileName, "--help")
+                    {
+                        UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+                    });
+                    var text = help?.StandardOutput.ReadToEnd() ?? "";
+                    help?.WaitForExit(5000);
+                    supported = text.Contains("--no-daemon", StringComparison.Ordinal);
+                }
+                catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException) { supported = false; }
+                codexNoDaemon[info.FileName] = supported;
+            }
+        }
+        if (supported) info.ArgumentList.Add("--no-daemon");
+    }
+
     private static string? FindTool(string engine)
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -540,6 +568,7 @@ public sealed partial class BrowserForm
 
     private bool StartCodex(Conversation chat, ProcessStartInfo info, string prompt, AttachedImage[] images, string instructions, string scripts)
     {
+        AddCodexDaemonFlag(info);
         info.ArgumentList.Add("app-server");
         if (Launch(chat, info) is not { } run) return false;
         var process = run.Process;

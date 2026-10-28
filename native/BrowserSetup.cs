@@ -256,7 +256,10 @@ public sealed partial class BrowserForm
         + "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); ";
     private static readonly Dictionary<string, (string Name, string Script)> ToolInstallers = new()
     {
-        ["claude"] = ("Claude Code", "irm https://claude.ai/install.ps1 | iex; "),
+        // The installer puts claude.exe in ~\.localin but does not always add that folder to PATH, so `claude` would not
+        // be found in a new terminal.
+        ["claude"] = ("Claude Code", "irm https://claude.ai/install.ps1 | iex; $bin = [IO.Path]::Combine($env:USERPROFILE, '.local', 'bin'); "
+            + "$user = [string][Environment]::GetEnvironmentVariable('Path','User'); if (($user -split ';') -notcontains $bin) { [Environment]::SetEnvironmentVariable('Path', ($user.TrimEnd(';') + ';' + $bin), 'User'); Write-Host 'PATH에 추가했습니다:' $bin }; "),
         ["codex"] = ("Codex", "if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { " + NodeInstall + "} npm install -g @openai/codex; "),
         ["node"] = ("Node.js", NodeInstall)
     };

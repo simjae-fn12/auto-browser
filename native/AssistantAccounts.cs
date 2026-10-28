@@ -300,6 +300,7 @@ public sealed partial class BrowserForm
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
             StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
         };
+        if (account.Engine == "codex") AddCodexDaemonFlag(info);
         foreach (var arg in account.Engine == "claude" ? new[] { "auth", "login" } : ["login", "--device-auth"]) info.ArgumentList.Add(arg);
         IsolateAssistantEnvironment(info);
         info.Environment["BROWSER"] = "none";
@@ -342,7 +343,8 @@ public sealed partial class BrowserForm
     {
         if (login.Process.HasExited && login.TabId == null) return;
         line = System.Text.RegularExpressions.Regex.Replace(line, @"\x1b\[[0-9;]*m", "");
-        if (account.Engine == "codex" && login.Code == null && login.TabId != null && DeviceCode.Match(line) is { Success: true } code)
+        // The code may come before or on the same line as the link; it is kept either way and announced once.
+        if (account.Engine == "codex" && login.Code == null && DeviceCode.Match(line) is { Success: true } code)
         {
             login.Code = code.Value;
             try { Clipboard.SetText(code.Value); } catch (System.Runtime.InteropServices.ExternalException) { }
@@ -462,6 +464,8 @@ public sealed partial class BrowserForm
                 : CodexLoginStatus(dir ?? DefaultConfigDir("codex"));
             if (FindAccount(account.Engine, account.Id) != account) return;
             account.LoggedIn = loggedIn;
+            // A signed-out account must not keep showing whoever was signed in there before.
+            if (!loggedIn) { account.Email = null; account.Plan = null; }
             if (email != null) account.Email = email;
             if (plan != null) account.Plan = plan;
             if (loggedIn && account.Name == "새 계정" && email != null) account.Name = email;

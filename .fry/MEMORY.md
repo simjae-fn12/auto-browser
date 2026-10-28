@@ -183,3 +183,9 @@
 - 함정: 비밀번호 금고 DPAPI 엔트로피 `"pluck-site-vault-v1"`은 바꾸면 저장된 비밀번호를 못 푼다 → 이름 변경에서 제외(일부러 남김).
 - 환경 변수는 OINZI_*. 데이터 폴더만 옛 `PLUCK_NATIVE_DATA_DIR`도 받는다(테스트 스크립트 호환).
 - 로고: `native/oinzi.svg`(보라 그라데이션 타일 + 흰 O 링 + AI 반짝이)가 원본. `oinzi.ico`는 이 SVG를 Edge headless로 1024px 렌더 → Pillow로 16~256 멀티 사이즈 ICO.
+
+# 다른 PC 설치에서 겪은 문제 (Codex daemon, Claude PATH, 기본 계정)
+- Codex 0.16x는 기본으로 공유 백그라운드 서버(daemon)를 통해 돈다. 다른 프로그램의 서버(Codex 데스크톱 앱, 관리자 권한으로 띄운 것)면 "액세스가 거부되었습니다 (os error 5)". → Oinzi가 띄우는 codex(app-server, login)는 `--help`에 `--no-daemon`이 있으면 붙인다(`AddCodexDaemonFlag`).
+- Claude 공식 설치 스크립트는 `~\.local\bin`을 PATH에 넣지 않을 때가 있어 터미널에서 `claude`가 안 잡힌다(Oinzi는 FindTool이 그 폴더를 직접 봐서 동작). 「시작하기」 설치는 사용자 PATH에 추가까지 한다.
+- 「기본 계정」= 그 Windows 사용자 폴더(~/.claude, ~/.codex)에 이미 있던 로그인. 설치 파일에는 계정 데이터가 없다. 로그아웃 상태에서 예전 이메일이 남아 보이던 문제 → 로그인 아님이면 이메일·요금제 표시를 지운다.
+- Codex 기기 코드가 링크보다 먼저(또는 같은 줄에) 나오면 놓치던 문제 → 순서와 상관없이 잡는다.
