@@ -12,6 +12,7 @@ const connectionPath = process.env.PLUCK_NATIVE_CONNECTION
   || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'pluck-windows-native', 'connection.json');
 let sessionId = process.env.PLUCK_SESSION || '';
 const sessionLabel = process.env.PLUCK_SESSION_LABEL || 'MCP';
+const sessionProfile = process.env.PLUCK_PROFILE || '';
 
 async function call(command, args = {}) {
   // Read the connection every call: pluck writes a new port and token each time it starts.
@@ -22,7 +23,7 @@ async function call(command, args = {}) {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${connection.token}` },
     body: JSON.stringify({ command, ...args }),
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(command === 'batch' ? 300000 : 45000),
   });
   const result = await response.json();
   if (!response.ok) throw new Error(`${command}: ${result.error || response.status}`);
@@ -31,7 +32,7 @@ async function call(command, args = {}) {
 
 let opened;
 function session() {
-  return opened ??= call('session', { session: sessionId, label: sessionLabel })
+  return opened ??= call('session', { session: sessionId, label: sessionLabel, profile: sessionProfile })
     .then(result => { sessionId = result.session; return sessionId; })
     .catch(error => { opened = undefined; throw error; });
 }
@@ -41,8 +42,12 @@ const id = { type: 'integer', description: 'Tab id from open, tabs or active_tab
 const target = { type: 'string', description: 'A snapshot ref such as "@f0:12", "text=Visible label", or a CSS selector' };
 const tools = [
   { name: 'tabs', description: "List this session's tabs.", props: {}, run: () => send('list') },
-  { name: 'open', description: 'Open a new background tab in this session. Does not change what the person is looking at.',
-    props: { url: { type: 'string' } }, required: ['url'], run: a => send('new', { url: a.url }) },
+  { name: 'profiles', description: "List the person's browser profiles (separate logins, like Chrome profiles) and the site accounts saved in each: { name, note, logins: [{ credential, site, username }] }. Passwords are never returned.",
+    props: {}, run: () => send('profiles') },
+  { name: 'open', description: 'Open a new background tab in this session. Does not change what the person is looking at. profile picks one of the person’s browser profiles by name or id; omit to use this session’s profile (set with PLUCK_PROFILE).',
+    props: { url: { type: 'string' }, profile: { type: 'string' } }, required: ['url'], run: a => send('new', { url: a.url, profile: a.profile }) },
+  { name: 'login', description: 'Fill the login form on the page with a saved account (credential id from profiles). pluck types the username and password itself; it only works on that account’s site in that account’s profile. Submit the form afterwards.',
+    props: { id, credential: { type: 'string' } }, required: ['id', 'credential'], run: a => send('login', a) },
   { name: 'active_tab', description: 'Get the tab the person is currently viewing and allow this session to drive it. It cannot be closed.',
     props: {}, run: () => send('active') },
   { name: 'goto', description: 'Navigate a tab and wait for the load to finish.', props: { id, url: { type: 'string' } }, required: ['id', 'url'],
@@ -75,6 +80,10 @@ const tools = [
     props: { id, code: { type: 'string' } }, required: ['id', 'code'], run: a => send('js', a) },
   { name: 'show', description: "Bring one of this session's tabs to the front only if the person is following it.", props: { id }, required: ['id'], run: a => send('show', a) },
   { name: 'close', description: "Close one of this session's tabs.", props: { id }, required: ['id'], run: a => send('close', a) },
+  { name: 'set_status', description: "Show one short line about where this task stands on its card in the person's session overview, e.g. '검증 중' or '막힘: 캡차'.",
+    props: { text: { type: 'string' } }, required: ['text'], run: a => send('status', a) },
+  { name: 'batch', description: 'Run several commands in order in one call to save round trips: steps = [{ command: "click", id, target }, { command: "fill", id, target, value }, { command: "snapshot", id, diff: true }]. Commands use the same names and arguments as the HTTP API (new, goto, click, clickAt, fill, type, select, hover, press, scroll, wait, snapshot, js, close). Stops at the first failure unless bail=false.',
+    props: { steps: { type: 'array', items: { type: 'object' } }, bail: { type: 'boolean' } }, required: ['steps'], run: a => send('batch', { steps: a.steps, bail: a.bail !== false }) },
 ];
 
 const write = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');

@@ -15,6 +15,7 @@
 - 사용자 선호: 패널은 Aside 브라우저처럼 단순하게 둔다. 헤더에는 대화 목록 select(제목 역할)와 아이콘 3개만 둔다. 5시간/주간 사용량 막대는 사용자가 좋아하므로 헤더 바로 아래에 항상 보인다.
 - 입력창 아래 `.afoot` 줄: 왼쪽에 Claude/Codex 엔진 전환, 오른쪽에 `#aiOpts` 요약 칩("모델 · 추론 · 권한")을 둔다. 칩을 누르면 입력창 위에 `.aopts` 서랍(모델·추론·권한·폴더·따라보기)이 열린다. 전체 권한이면 칩 글자가 빨간색이 된다.
 - `.send` 클래스는 `margin-left:auto`를 쓴다. 중지 버튼과 전송 버튼이 함께 보이면 auto 여백이 둘로 나뉘어 중지 버튼이 가운데로 간다. 그래서 `#aiStop + #aiSend { margin-left: 0 }`가 필요하다.
+- 함정: 이미 포커스가 있는 chromeView에 `Focus()`를 다시 걸면 chrome 문서에 잠깐 blur가 생긴다. 팔레트는 window blur가 오면 닫히므로, 마우스로 새 탭을 누를 때마다 바로 닫혔다. 그래서 `frozen`에서는 `ContainsFocus`가 아닐 때만 Focus를 건다.
 
 # 테스트: 실행 중인 pluck을 건드리지 않고 검증
 - `PLUCK_NATIVE_DATA_DIR=<임시폴더>`로 Debug 빌드를 따로 띄우고, `PLUCK_NATIVE_CONNECTION=<임시폴더>/connection.json`을 지정해 `node agent.mjs <스크립트>`를 실행한다.
@@ -86,3 +87,58 @@
   - 백그라운드(숨은) 탭에서는 `requestAnimationFrame`이 실행되지 않는다. 등장 애니메이션은 `void el.offsetWidth`로 강제 reflow한 뒤 클래스를 붙인다.
   - 숨은 탭의 `Page.captureScreenshot`은 새 프레임을 기다리다 수십 초 멈출 수 있다. 2.5초 안에 끝나지 않으면 `captureBeyondViewport` + 화면 영역 clip으로 다시 찍어 렌더링을 강제한다.
 - 테스트: `node --test tests/native-input.test.mjs`. Debug 빌드가 필요하고, 임시 데이터 폴더로 따로 띄운다.
+
+# AI 계정 여러 개: CLAUDE_CONFIG_DIR / CODEX_HOME 폴더 분리 (AssistantAccounts.cs)
+
+## WHY: 자격 증명 파일 바꿔 끼우기를 버림
+- 사용자는 원래 `~/.claude/.credentials.json`·`~/.codex/auth.json`을 `auth-simjae.json`처럼 복사해 두고 바꿔 썼다. 갱신 토큰(refresh token)은 쓸 때마다 바뀌므로 저장해 둔 사본이 금방 쓸 수 없게 된다. 같은 토큰을 두 곳에 두면 한쪽이 갱신하면서 다른 쪽이 무효가 된다.
+- 그래서 계정마다 설정 폴더를 따로 두고 실행할 때 환경 변수로 가리킨다. 토큰은 폴더 안에서 갱신된다. 재시작할 필요가 없고, 대화마다 다른 계정으로 동시에 실행할 수도 있다. Aside도 `~/.aside/u/0`, `u/1`처럼 계정별 폴더를 쓴다.
+- **로그인 파일을 다른 위치로 복사하는 테스트는 금지**(같은 이유). 테스트는 로그인하지 않은 빈 계정으로 하고, "Not logged in"/401이 나오면 폴더 분리가 동작하는 것이다.
+
+## 규칙·함정
+- `default` 계정은 사용자의 기본 로그인이다. 이 계정에는 환경 변수를 넣지 않는다(사용자가 터미널에 설정한 값을 그대로 물려받음).
+- 공유 설정은 한 방향으로만 가져온다. 파일(settings.json, CLAUDE.md / config.toml, AGENTS.md)은 복사하고, 폴더(skills, agents, commands, plugins)는 `mklink /J` 정션으로 연결한다. 정션은 관리자 권한이 필요 없다. `~/.claude.json`에서는 `mcpServers`만 복사한다. 사용자의 원본 설정은 절대 쓰지 않는다.
+- 계정을 삭제할 때는 정션을 먼저 따로 지운다(`DeleteAccountDir`). 그래야 원래 skills 폴더가 지워지지 않는다.
+- CLI 세션은 계정 폴더에 저장된다. 그래서 `Conversation.SessionAccount`가 지금 계정과 다르면 Session을 비우고 `NeedsContext`로 이어 간다. SessionCwd와 같은 방식이다. 예전에는 `HistorySnapshot`에 SessionCwd가 빠져 있어서 재시작할 때마다 Claude 세션이 끊겼는데, 지금은 함께 저장한다.
+- 플러그인 매니페스트(`installed_plugins.json`, `known_marketplaces.json`)에는 절대 경로가 들어 있고 Claude가 자기 설정 폴더 기준으로 다시 쓴다. 그래서 `plugins` 폴더는 정션으로 통째로 연결하지 않는다. 계정 폴더에 실제 폴더를 만들고, json은 복사하고, 하위 폴더만 정션으로 연결한다.
+- 자격 증명 가져오기는 기본 계정의 실제 로그인 파일과, 다른 계정과 refresh token이 같은 파일을 거절한다. 같은 토큰을 두 곳에 두면 한쪽이 로그아웃된다.
+- 실패한 실행도 CLI의 session 이벤트를 먼저 보낸다. 로그인 전 실행이 그렇다. 그래서 그 실행이 새로 만든 세션은 실패하면 지운다(`AssistantRun.NewSession`, `ForgetFailedSession`). 지우지 않으면 다음 메시지마다 "No conversation found"가 난다. 이 오류가 stderr로 와도 `PostAssistant`에서 세션을 비운다.
+- `claude auth status --json`은 loggedIn·email·subscriptionType을 준다. Codex는 `auth.json`의 id_token(JWT) 클레임에 email과 `https://api.openai.com/auth`.chatgpt_plan_type이 있다.
+- Codex가 npm으로 설치돼 있으면 PATH에는 `codex.cmd`만 있다. `FindTool`은 npm 패키지 안에 있는 `codex.exe` 경로도 찾아본다.
+
+# 설정 페이지 (BrowserSettings.cs, chrome.html "Settings (Ctrl+,)")
+- 개요와 같은 방식으로 뷰포트를 얼리고 녹이는 오버레이다(`paletteOpen` 공유). 팔레트·개요·설정은 서로를 dismiss하고, 닫히는 타이머는 `st.open`도 확인해야 thaw가 엇갈리지 않는다.
+- 테마는 `CoreWebView2Profile.PreferredColorScheme`으로 바꾼다. chrome 페이지도 같은 프로필을 쓰므로 `prefers-color-scheme`이 바뀌고, `reportTheme`가 창 제목 표시줄 색까지 맞춘다.
+- Prefs는 C#에서 PascalCase로 저장하고 JS에는 `PrefsMessage()`로 camelCase를 보낸다. 불린은 JS boolean으로 보낸다. `Read()`가 "True"/"False" 문자열로 돌려준다.
+- 테스트: `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`로 테스트 인스턴스를 띄우고 CDP로 chrome 페이지에 붙는다. `chrome.webview.postMessage`로 실제 메시지를 보낸다(`.omc/itest/cdp.mjs`, `restart.ps1`). `restart.ps1`은 pids.txt의 PID를 죽이므로 오래된 PID는 먼저 비운다.
+
+# 프로필·사이트 계정 금고 (BrowserProfiles.cs)
+
+## WHY / 설계
+- 사용자는 Chrome 프로필을 수십 개 쓰고 자동화할 때 사이트마다 계정이 많다. 그래서 프로필(쿠키 분리)과 프로필별 계정 금고를 둘 다 만들었다. 사용자가 이 방식을 골랐다.
+- AI는 비밀번호를 절대 받지 않는다. `login(tabId, credential)`을 부르면 pluck이 직접 입력한다. 입력하기 전에 두 가지를 확인한다. 로그인 칸이 있는 문서의 `location.hostname`이 저장된 사이트와 같은지(또는 하위 도메인인지), 탭 프로필이 계정 프로필과 같은지다. 프롬프트 인젝션으로 다른 사이트에 비밀번호를 입력하게 만드는 것을 막기 위해서다.
+- 프로필 = 작업공간(사용자 선택, 외주 프로젝트별 계정 분리 용도). 사이드바 「열린 탭」·Ctrl+Tab·Ctrl+1~9는 `userProfile`의 탭만 다룬다(`InWorkspace`). AI 세션 탭은 프로필과 무관하게 모두 보인다. `userProfile`은 사람이 보는 탭을 따라간다(`SelectedIndexChanged` → `FollowWorkspace`). 그래서 다른 프로필 탭이 선택되면 작업공간도 바뀐다. 프로필을 고르면(`prof.use`) 그 프로필에서 마지막으로 본 탭이 열리고, 탭이 없으면 홈 탭을 하나 만든다. 로그인 유지는 WebView2 프로필별 쿠키가 담당한다.
+- AI 세션마다 프로필이 하나씩 있다(`AgentSession.Profile`). 이유: 여러 세션이 서로 다른 계정으로 동시에 일하게 하려고(예: 터미널은 pluck 계정, 패널은 caryoung 계정). `open`에 profile이 없으면 세션 프로필을 쓴다. 새 세션은 만들 때의 `userProfile`을 쓰고, 터미널은 `--profile`이나 `PLUCK_PROFILE`로 정한다(`session` 명령의 profile). 패널 대화는 처음 실행할 때 `Conversation.Profile`로 고정된다. 패널 자식 프로세스에서는 `PLUCK_PROFILE`을 지운다. 지우지 않으면 사용자 터미널 값이 대화 프로필을 덮어쓴다. tabs.json의 sessions에도 profile을 저장한다.
+- 세션 개요(Ctrl+Shift+O)는 사람 탭을 프로필마다 카드 하나로 나눈다(space `user:<프로필id>`, 누르면 `SwitchWorkspace`). 녹화는 그대로 `user` 하나다(지금 보는 탭을 녹화한다).
+- Chrome에서 가져온 것: 프로필 이름과 구글 이메일만 가져와 메모에 `구글: 이메일`로 적었다. 쿠키와 비밀번호는 Chrome 앱 전용 암호화를 우회해야 해서 가져오지 않는다. 비밀번호는 사용자가 직접 내보낸 CSV로만 가져온다(`cred.import` → `ImportPasswordCsv`). 파일 선택 창은 C#에서 띄우고, CSV 내용은 chrome 페이지로 보내지 않는다. 가져온 뒤에는 CSV를 지울지 묻는다.
+- 테스트 함정: 이 PC는 한글 IME가 켜져 있어서 SendKeys로 경로를 입력하면 한글 자모로 들어간다. 파일 선택 창 자동화는 포기하고 로직만 리플렉션으로 검증했다.
+- chrome 페이지에는 비밀번호를 보내지 않는다(hasPassword만). 수정할 때 비밀번호를 비워 두면 기존 값을 그대로 둔다.
+
+## 함정
+- WebView2 프로필은 `CoreWebView2ControllerOptions.ProfileName`(`p-<id>`)이다. 기본 프로필은 options 없이 만든다. 팝업(NewWindowRequested)은 반드시 연 탭과 같은 프로필이어야 붙는다.
+- 테마와 다운로드 폴더는 CoreWebView2Profile마다 설정된다. 그래서 탭을 만들 때마다 `ApplyProfile`을 부른다. 인터넷 사용 기록 삭제도 열린 모든 프로필에 적용한다.
+- 프로필을 삭제할 때 폴더는 브라우저가 잡고 있어서 바로 못 지운다. `PendingDelete`에 넣어 두고 다음에 시작할 때 `EBWebView\p-<id>`를 지운다.
+- 보안 리뷰 후 다시 설계했다. 로그인 칸 찾기, 포커스, 확인은 모두 CDP `Page.createIsolatedWorld` + `Runtime.evaluate(contextId)`로 한다. 페이지 세계에서 돌리면 페이지가 JSON.stringify나 querySelectorAll을 바꿔치기해 다른 사이트인 척할 수 있었다. 사이트 주소는 `core.Source`의 IdnHost(최상위)로만 확인한다. iframe 로그인은 지원하지 않는다. 입력하기 직전에 loaderId, 주소, 포커스를 다시 확인하고, 스크립트로 값을 넣는 대체 방법은 쓰지 않는다. 스크립트에는 비밀번호를 넣지 않고 길이만 비교한다.
+- 문서 단위로 잠근다(`DocumentSerial`은 NavigationStarting마다 +1). 로그인을 채운 문서에서는 js, screenshot, `[value` 선택자를 거절하고 스냅샷에서 비밀번호를 가린다. js가 실행된 문서에서는 login을 거절한다(입력 이벤트를 미리 걸어 두는 공격을 막기 위해서).
+- 한계: DPAPI는 같은 Windows 사용자의 프로세스라면 풀 수 있다. 전체 권한 AI는 profiles.json을 직접 풀 수 있다. 화면에도 이렇게 적어 두었다.
+- 백그라운드 탭에서 `press('Enter')`로 폼이 제출되지 않는다. 이 기능을 넣기 전부터 있던 문제다. 로그인 제출은 버튼을 클릭한다.
+- 사이드바 팝업 메뉴는 사이드바 폭 안에 있어야 한다. 오른쪽은 네이티브 WebView가 덮고 있어서 넘치면 가려진다. `openMenu({ sidebar: true })`.
+
+# 예약 작업 (BrowserSchedules.cs) · 요소 고르기 (BrowserPicker.cs) · 에이전트 추가 명령 (BrowserAgentExtras.cs)
+
+## 규칙·함정
+- 예약 실행은 `new Conversation`을 직접 만든다. `NewConversation()`은 그 대화를 선택해 버려서, 사용자가 패널에서 보던 대화가 바뀐다. 실행이 끝나는 시점은 `PostAssistant`의 "done"에서 `FinishScheduleRun`으로 잡는다. `scheduleRuns`(대화 id → 예약)로 짝을 짓는다.
+- 다음 실행 시각은 `NextRun(LastRun ?? Created)`이다. 예약을 수정하거나 켜면 LastRun을 지금으로 바꾼다. 그래야 바꾼 시각이 "놓친 실행"으로 처리돼 곧바로 실행되지 않는다. 시작할 때 놓친 실행 확인은 대화 기록이 로드된 뒤(5초 뒤)에 한다.
+- 요소 고르기는 CDP `Runtime.evaluate(awaitPromise)`로 페이지 안의 Promise가 끝날 때까지 기다린다(클릭하거나 Esc, 최대 2분). 페이지 클릭은 capture 단계에서 막아서 실제로 눌리지 않는다.
+- `compare`는 이미지를 base64로 주고받는다. pluck이 에이전트의 경로를 대신 읽거나 쓰면 Claude 제한 모드의 샌드박스를 우회하게 되기 때문이다. GDI+ Bitmap은 스트림이 닫히면 깨지므로 픽셀을 복사해 둔다.
+- 계정 사용량 바로 조회(OAuth usage API)는 넣지 않았다. 로그인 토큰을 비공개 엔드포인트로 보내야 해서다. 다른 브라우저 쿠키 가져오기도 하지 않는다. Chrome·Edge의 v20 앱 전용 암호화는 다른 프로그램이 읽지 못하게 하려는 보호 장치다.

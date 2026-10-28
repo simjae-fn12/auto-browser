@@ -22,6 +22,8 @@ public sealed partial class BrowserForm
         // Adds a message to the turn in progress; false once the CLI can no longer take one.
         public Func<string, AttachedImage[], bool> Steer { get; set; } = (_, _) => false;
         public bool Finished { get; set; }
+        // The CLI session was created by this run; if the run fails, the CLI may never have saved it.
+        public bool NewSession { get; set; }
         public Queue<string> Errors { get; } = new();
     }
 
@@ -60,7 +62,8 @@ public sealed partial class BrowserForm
     }
 
     private static string AssistantInstructions(string agent, string scripts) =>
-        ReadResource("assistant.md").Replace("{{AGENT}}", agent).Replace("{{SCRIPTS}}", scripts).Replace("{{SCREENSHOTS}}", ScreenshotsDir)
+        (prefs.CustomInstructions.Trim() is { Length: > 0 } custom ? "# The person's standing instructions\n" + custom + "\n\n" : "")
+        + ReadResource("assistant.md").Replace("{{AGENT}}", agent).Replace("{{SCRIPTS}}", scripts).Replace("{{SCREENSHOTS}}", ScreenshotsDir)
             .Replace("{{SKILLS}}", Path.Combine(Path.GetDirectoryName(agent)!, ".claude", "skills"));
 
     private static string ReadResource(string name)
@@ -78,7 +81,10 @@ public sealed partial class BrowserForm
         var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries)
             .Append(Path.Combine(home, ".local", "bin"))
             .Append(Path.Combine(local, "Programs", "OpenAI", "Codex", "bin"))
-            .Append(Path.Combine(local, "Microsoft", "WinGet", "Links"));
+            .Append(Path.Combine(local, "Microsoft", "WinGet", "Links"))
+            // npm installs only a codex.cmd shim on PATH; the native binary sits inside the package.
+            .Append(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm", "node_modules", "@openai", "codex",
+                "node_modules", "@openai", "codex-win32-x64", "vendor", "x86_64-pc-windows-msvc", "bin"));
         foreach (var dir in dirs)
         {
             try
@@ -109,6 +115,12 @@ public sealed partial class BrowserForm
         var entry = data as JsonObject ?? JsonSerializer.SerializeToNode(data)!.AsObject();
         var kind = entry["kind"]?.ToString();
         var shown = currentConversations.GetValueOrDefault(chat.Engine) == chat;
+        if (kind == "usage") RecordAccountUsage(chat, entry);
+        if (kind == "done") FinishScheduleRun(chat, entry["error"]?.ToString());
+        // A run that failed early (for example before logging in) can leave a session id the CLI never saved. Resuming it
+        // fails every time, whether the CLI reports it in its result or on stderr, so the next message uses the transcript.
+        if (kind == "done" && entry["error"]?.ToString().Contains("No conversation found", StringComparison.OrdinalIgnoreCase) == true)
+        { chat.Session = null; chat.NeedsContext = true; }
         if (kind == "done")
         {
             chat.Running = false;
@@ -130,6 +142,7 @@ public sealed partial class BrowserForm
                 || key.StartsWith("VSCODE_", StringComparison.OrdinalIgnoreCase)
                 || key.StartsWith("ORCA_", StringComparison.OrdinalIgnoreCase)
                 || key.StartsWith("PLUCK_SESSION", StringComparison.OrdinalIgnoreCase)
+                || key.Equals("PLUCK_PROFILE", StringComparison.OrdinalIgnoreCase)
                 || key is "CLAUDECODE" or "WT_SESSION" or "WT_PROFILE_ID" or "TERM_SESSION_ID" or "TERM_PROGRAM" or "TERM_PROGRAM_VERSION")
                 info.Environment.Remove(key);
         info.Environment["TERM"] = "dumb";
@@ -169,11 +182,17 @@ public sealed partial class BrowserForm
         if (chat.Engine == "claude" && chat.Session != null && !string.Equals(chat.SessionCwd ?? workspace, cwd, StringComparison.OrdinalIgnoreCase))
         { chat.Session = null; chat.NeedsContext = true; }
         chat.SessionCwd = cwd;
+        // Sessions are stored in the account's config folder, so after switching accounts the conversation continues from its transcript.
+        var account = ActiveAccountId(engine) is var active && active == DefaultAccount ? null : active;
+        if (chat.Session != null && chat.SessionAccount != account) { chat.Session = null; chat.NeedsContext = true; }
+        chat.SessionAccount = account;
         if (cwd == AiWorkDir) InstallSkills(AiWorkDir);
         if (chat.NeedsContext && !command) prompt = HandoffContext(chat, scripts) + prompt;
         var space = SpaceOf(chat);
         var browserSession = OpenSession(space, SessionTitle(chat), "panel");
         browserSession.Kind = "panel";
+        chat.Profile = FindProfile(chat.Profile ?? "")?.Id ?? userProfile;
+        if (browserSession.Profile != chat.Profile) { browserSession.Profile = chat.Profile; RefreshSidebar(); }
         if (chat.BrowserRuntime != browserRuntime && !command)
             prompt = "[Browser restarted or new session] Previous tab IDs and element references may be stale. Match the prior task to your session's current tabs by URL, then take a fresh snapshot. The visible tab may be unrelated: do not switch the task to it merely because it is active. If the task tab is missing, reopen its known URL from the conversation and inspect the site's saved draft before repeating edits. Unsaved page memory may be lost. Your session's tabs: "
                 + JsonSerializer.Serialize(State(space)) + "\n\n" + prompt;
@@ -189,6 +208,7 @@ public sealed partial class BrowserForm
             StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
         };
         IsolateAssistantEnvironment(info);
+        ApplyAccount(info, engine);
         if (connectionFile != null) info.Environment["PLUCK_NATIVE_CONNECTION"] = connectionFile;
         info.Environment["PLUCK_SESSION"] = space;
         info.Environment["PLUCK_SESSION_LABEL"] = browserSession.Label;
@@ -239,16 +259,18 @@ public sealed partial class BrowserForm
         switch (data["kind"]?.GetValue<string>())
         {
             case "session":
+                run.NewSession |= chat.Session == null;
                 chat.Session = data["id"]!.GetValue<string>();
                 SaveAssistantHistory();
                 return;
             case "done":
                 run.Finished = true;
                 if (data["error"] == null && chat.Session != null) chat.NeedsContext = false;
+                else if (data["error"] != null) ForgetFailedSession(run);
                 break;
         }
         PostAssistant(chat, data);
-        if (data["kind"]?.GetValue<string>() == "done") PostAssistantStatus();
+        if (data["kind"]?.GetValue<string>() == "done") { PostAssistantStatus(); NotifyDone(chat, data["error"] != null); }
     });
 
     private void WatchExit(AssistantRun run, Task reader) => _ = Task.Run(async () =>
@@ -268,6 +290,7 @@ public sealed partial class BrowserForm
             string tail;
             lock (run.Errors) tail = string.Join("\n", run.Errors.Where(line => !line.Contains(" ERROR rmcp") && !line.Contains("codex_rmcp_client")).TakeLast(6));
             var code = run.Process.ExitCode;
+            if (code != 0) ForgetFailedSession(run);
             PostAssistant(run.Chat, code == 0
                 ? new JsonObject { ["kind"] = "done" }
                 : new JsonObject { ["kind"] = "done", ["error"] = string.IsNullOrWhiteSpace(tail) ? $"종료 코드 {code}" : tail });
@@ -275,6 +298,15 @@ public sealed partial class BrowserForm
         PostAssistantStatus();
         run.Process.Dispose();
         if (!run.Chat.Interrupted) RunNextPrompt(run.Chat);
+    }
+
+    // A session created by a failed run (for example before logging in) may not exist; resuming it would fail on every message.
+    private void ForgetFailedSession(AssistantRun run)
+    {
+        if (!run.NewSession || run.Chat.Session == null) return;
+        run.Chat.Session = null;
+        run.Chat.NeedsContext = true;
+        SaveAssistantHistory();
     }
 
     private static void Kill(Process process)

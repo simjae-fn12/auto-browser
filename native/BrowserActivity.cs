@@ -28,6 +28,8 @@ public sealed partial class BrowserForm
 
     private async Task ShowActivityAsync(BrowserTab tab, string command, string target = "", string frameId = "f0", bool done = false)
     {
+        // The done call still runs so an overlay shown before the setting was turned off gets removed.
+        if (!prefs.AgentOverlay && !done) return;
         var label = done ? "브라우저 조작 완료" : ActivityLabel(command);
         var script = ReadResource("activity.js") + "\nwindow.__pluckActivity(" + JsonSerializer.Serialize(label) + ","
             + JsonSerializer.Serialize(target) + "," + (done ? "true" : "false") + "," + JsonSerializer.Serialize(command) + ")";

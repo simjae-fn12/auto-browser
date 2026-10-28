@@ -25,6 +25,12 @@ public sealed partial class BrowserForm
         public string? Cwd { get; set; }
         // Folder the Claude session was created in; null means the old internal workspace default.
         public string? SessionCwd { get; set; }
+        // Account the CLI session belongs to; sessions live in that account's config folder. Null is the default login.
+        public string? SessionAccount { get; set; }
+        // Browser profile (account workspace) the conversation works in: the one in view when it first ran.
+        public string? Profile { get; set; }
+        // Last message either way, for the conversation list; null in conversations saved before it existed.
+        public DateTime? Updated { get; set; }
         public List<QueuedPrompt> Pending { get; set; } = [];
         public List<JsonObject> Events { get; set; } = [];
     }
@@ -83,7 +89,7 @@ public sealed partial class BrowserForm
     private Conversation[] HistorySnapshot() => conversations.Select(c => new Conversation
     { Id = c.Id, Engine = c.Engine, Title = c.Title, Session = c.Session, NeedsContext = c.NeedsContext,
         Running = c.Running, Interrupted = c.Interrupted, Selected = c.Selected, BrowserRuntime = c.BrowserRuntime, Space = c.Space,
-        Model = c.Model, Effort = c.Effort, Mode = c.Mode, Cwd = c.Cwd,
+        Model = c.Model, Effort = c.Effort, Mode = c.Mode, Cwd = c.Cwd, SessionCwd = c.SessionCwd, SessionAccount = c.SessionAccount, Updated = c.Updated,
         Pending = c.Pending.ToList(), Events = c.Events.ToList() }).ToArray();
 
     private static string SpaceOf(Conversation chat) => chat.Space ??= chat.Id;
@@ -124,8 +130,13 @@ public sealed partial class BrowserForm
     private void PostConversationList(string engine) => PostChrome(new
     {
         type = "ai.history", engine, selected = currentConversations[engine].Id,
-        chats = conversations.Where(c => c.Engine == engine).Reverse()
-            .Select(c => new { id = c.Id, title = c.Title, running = aiRuns.ContainsKey(c.Id) }).ToArray()
+        // Untouched "new conversation" rooms other than the open one are left out; they would only clutter the list.
+        chats = conversations.Where(c => c.Engine == engine && (c.Events.Count > 0 || c == currentConversations[engine])).Reverse()
+            .Select(c => new
+            {
+                id = c.Id, title = c.Title, running = aiRuns.ContainsKey(c.Id), updated = c.Updated,
+                messages = c.Events.Count(e => e["kind"]?.ToString() == "user")
+            }).ToArray()
     });
 
     private void PostConversation(string engine)
@@ -152,9 +163,20 @@ public sealed partial class BrowserForm
         PostConversation(engine);
     }
 
+    private void DeleteConversation(string engine, string id)
+    {
+        if (conversations.FirstOrDefault(c => c.Engine == engine && c.Id == id) is not { } chat || aiRuns.ContainsKey(chat.Id)) return;
+        conversations.Remove(chat);
+        SaveAssistantHistory();
+        if (currentConversations.GetValueOrDefault(engine) == chat)
+            SelectConversation(engine, conversations.LastOrDefault(c => c.Engine == engine && c.Events.Count > 0)?.Id);
+        else PostConversationList(engine);
+    }
+
     private void RecordAssistant(Conversation chat, JsonObject entry)
     {
         chat.Events.Add(entry);
+        if (entry["kind"]?.ToString() is "user" or "text") chat.Updated = DateTime.UtcNow;
         if (entry["kind"]?.ToString() == "user" && chat.Title == "새 대화")
         {
             chat.Title = string.IsNullOrWhiteSpace(entry["text"]?.ToString()) ? "사진을 첨부한 대화" : Clip(entry["text"]?.ToString(), 48);

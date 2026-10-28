@@ -86,14 +86,19 @@ public sealed partial class BrowserForm
         codexModelsLoading = true;
         try
         {
-            var models = await Task.Run(() => ReadCodexModels(exe));
+            var account = ActiveAccountId("codex");
+            var home = account == DefaultAccount ? null : AccountDir("codex", account);
+            if (home != null)
+                try { Directory.CreateDirectory(home); ShareConfig("codex", home); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            var models = await Task.Run(() => ReadCodexModels(exe, home));
             if (models.Length > 0) codexModels = models;
         }
         finally { codexModelsLoading = false; }
         if (!IsDisposed) PostSettings("codex");
     }
 
-    private static ModelOption[] ReadCodexModels(string exe)
+    private static ModelOption[] ReadCodexModels(string exe, string? codexHome)
     {
         var info = new ProcessStartInfo(exe)
         {
@@ -102,6 +107,7 @@ public sealed partial class BrowserForm
         };
         info.ArgumentList.Add("app-server");
         IsolateAssistantEnvironment(info);
+        if (codexHome != null) { Directory.CreateDirectory(codexHome); info.Environment["CODEX_HOME"] = codexHome; }
         using var process = Process.Start(info);
         if (process == null) return [];
         try

@@ -55,14 +55,24 @@ public sealed partial class BrowserForm
     private async Task<object[]> OverviewCardsAsync()
     {
         var entries = new List<(BrowserTab? Shown, Func<string?, object> Card)>();
-        var mine = Active() is { Agent: false } viewed ? viewed : OrderedTabs().FirstOrDefault(tab => !tab.Agent);
-        if (mine != null)
+        // The person's tabs get one card per profile workspace, the one in view first, so work for different accounts stays apart.
+        var several = profileBook.Items.Count > 1;
+        var workspaces = OrderedTabs().Where(tab => !tab.Agent).GroupBy(tab => tab.Profile)
+            .OrderByDescending(group => group.Key == userProfile).ThenBy(group => profileBook.Items.FindIndex(p => p.Id == group.Key));
+        foreach (var group in workspaces)
+        {
+            var profile = group.Key;
+            var viewing = Active() is { Agent: false } viewed && viewed.Profile == profile;
+            var mine = viewing ? Active()!
+                : lastWorkspaceTab.TryGetValue(profile, out var last) && group.FirstOrDefault(tab => tab.Id == last) is { } known ? known : group.First();
+            var count = group.Count();
             entries.Add((mine, thumb => new
             {
-                space = "user", label = "내 탭", kind = "user", engine = "", tabs = browserTabs.Values.Count(tab => !tab.Agent),
-                title = TabTitle(mine), current = Active()?.Agent == false, running = false, status = "", interrupted = false, stopped = false,
-                recording = IsRecording("user"), thumb
+                space = "user:" + profile, label = several ? ProfileName(profile) : "내 탭", kind = "user", engine = "", tabs = count,
+                title = TabTitle(mine), current = viewing, running = false, status = "", interrupted = false, stopped = false,
+                recording = viewing && IsRecording("user"), profile = (string?)null, thumb
             }));
+        }
         var recent = DateTime.UtcNow.AddSeconds(-45);
         foreach (var session in sessions.Values.OrderBy(session => session.Order).ToArray())
         {
@@ -80,8 +90,9 @@ public sealed partial class BrowserForm
                 space = session.Id, label = session.Label, kind = session.Kind == "panel" ? "panel" : "terminal",
                 engine = engine ?? chat?.Engine ?? "", tabs = own.Length,
                 title = shown == null ? "" : TabTitle(shown), current = Active() is { } active && own.Contains(active),
-                running, status = session.Stopped ? "중지됨" : busy ? session.Activity : running ? (run != null ? "AI가 생각하고 있어요" : "터미널에서 작업 중") : "",
-                interrupted = run == null && chat?.Interrupted == true, stopped = session.Stopped, recording = IsRecording(session.Id), thumb
+                running, status = session.Stopped ? "중지됨" : busy ? session.Activity : session.Note.Length > 0 ? session.Note : running ? (run != null ? "AI가 생각하고 있어요" : "터미널에서 작업 중") : "",
+                interrupted = run == null && chat?.Interrupted == true, stopped = session.Stopped, recording = IsRecording(session.Id),
+                profile = several ? ProfileName(session.Profile) : null, thumb
             }));
         }
         // Captures run side by side and the overview waits a bounded time; slower ones land in the cache for the next refresh.
@@ -162,8 +173,9 @@ public sealed partial class BrowserForm
 
     private void OpenSessionTab(string space)
     {
+        if (space.StartsWith("user:", StringComparison.Ordinal) && FindProfile(space[5..]) is { } workspace) { SwitchWorkspace(workspace.Id); return; }
         var tab = space == "user"
-            ? Active() is { Agent: false } viewed ? viewed : OrderedTabs().FirstOrDefault(other => !other.Agent)
+            ? Active() is { Agent: false } viewed ? viewed : OrderedTabs().Where(other => !other.Agent).OrderByDescending(other => other.Profile == userProfile).FirstOrDefault()
             : browserTabs.Values.Where(other => other.Space == space).OrderByDescending(other => other.PendingCommands).ThenByDescending(other => other.LastUsed).FirstOrDefault()
                 ?? sessions.GetValueOrDefault(space)?.UserTabs.Select(id => browserTabs.GetValueOrDefault(id)).LastOrDefault(other => other != null);
         if (tab != null) tabs.SelectedTab = tab.Page;

@@ -94,7 +94,7 @@ public sealed partial class BrowserForm
         recording.Ended = DateTime.UtcNow;
         recordings.Remove(recording.Space);
         SaveRecording(recording);
-        if (encode && recording.Frames.Count > 0) _ = EncodeAndPostAsync(recording.Id, reveal: false);
+        if (encode && prefs.AutoMp4 && recording.Frames.Count > 0) _ = EncodeAndPostAsync(recording.Id, reveal: false);
     }
 
     private void StopAllRecordings()

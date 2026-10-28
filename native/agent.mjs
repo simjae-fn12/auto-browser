@@ -10,10 +10,13 @@ let scriptPath;
 // The AI panel passes its conversation's session in the environment; a terminal agent passes --session to reuse its tabs.
 let sessionId = process.env.PLUCK_SESSION || '';
 let sessionLabel = process.env.PLUCK_SESSION_LABEL || '';
+// --profile / PLUCK_PROFILE pins the session to a browser profile, so its tabs use that profile's logins.
+let sessionProfile = process.env.PLUCK_PROFILE || '';
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--keep-tabs') keepTabs = true;
   else if (args[i] === '--session') sessionId = args[++i] ?? '';
   else if (args[i] === '--label') sessionLabel = args[++i] ?? '';
+  else if (args[i] === '--profile') sessionProfile = args[++i] ?? '';
   else scriptPath ??= args[i];
 }
 
@@ -28,7 +31,7 @@ async function call(command, args = {}) {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${connection.token}` },
     body: JSON.stringify({ command, ...args }),
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(command === 'batch' ? 300000 : 45000),
   });
   const result = await response.json();
   if (!response.ok) throw new Error(`${command}: ${result.error || response.status}`);
@@ -42,13 +45,15 @@ const snapshotArgs = (options) => ({
   diff: !!options.diff,
 });
 
-function scoped(session, label) {
+function scoped(session, label, profile) {
   const send = (command, args = {}) => call(command, { session, owner, ...args });
   return Object.freeze({
     id: session,
     name: label,
+    profile,
     list: () => send('list'),
-    open: (url) => send('new', { url }),
+    // Tabs open in the session's profile; { profile } picks another (name or id from browser.profiles()).
+    open: (url, options = {}) => send('new', { url, profile: options.profile }),
     show: (id) => send('show', { id }),
     goto: (id, url) => send('goto', { id, url }),
     snapshot: (id, options = {}) => send('snapshot', { id, ...snapshotArgs(options) }),
@@ -70,21 +75,36 @@ function scoped(session, label) {
       return path.resolve(file);
     },
     close: (id) => send('close', { id }),
+    login: (id, credential) => send('login', { id, credential }),
+    // One line on this session's overview card, e.g. '검증 중' or '막힘: 캡차'.
+    status: (text) => send('status', { text }),
+    // Runs [{ command: 'click', id, target }, ...] in order; stops at the first failure unless { bail: false }.
+    batch: (steps, options = {}) => send('batch', { steps, bail: options.bail !== false }),
+    // Compares the tab with a baseline PNG file; { diff: 'out.png' } also saves an image with changes in red.
+    compare: async (id, baselineFile, options = {}) => {
+      const baseline = (await fs.readFile(baselineFile)).toString('base64');
+      const result = await send('compare', { id, baseline, threshold: options.threshold, diff: !!options.diff });
+      if (options.diff && result.diff) await fs.writeFile(options.diff, Buffer.from(result.diff, 'base64'));
+      delete result.diff;
+      return result;
+    },
   });
 }
 
 let opened;
 function session(label) {
-  return opened ??= call('session', { session: sessionId, label: label || sessionLabel }).then(result => {
+  return opened ??= call('session', { session: sessionId, label: label || sessionLabel, profile: sessionProfile }).then(result => {
     if (result.created && keepTabs)
       console.error(`pluck session ${result.session}: pass --session ${result.session} to the next run to keep using these tabs.`);
     sessionId = result.session;
-    return scoped(result.session, result.label);
+    return scoped(result.session, result.label, result.profile);
   });
 }
 
 const browser = Object.freeze({
   session,
+  // The person's browser profiles and the site logins saved in each (never the passwords).
+  profiles: async () => { await session(); return (await call('profiles', { session: sessionId })).profiles; },
   // Older scripts named a shared space; the name is now only this session's label.
   useOrCreateSpace: (name) => session(name),
   // The tab the person is looking at. It cannot be opened or closed from here, only read and driven.
@@ -108,6 +128,7 @@ const browser = Object.freeze({
       forward: () => send('forward'),
       wait: (target, timeout = 10000) => send('wait', { target, timeout }),
       js: async (code) => (await send('js', { code })).result,
+      login: (credential) => send('login', { credential }),
       screenshot: async (file, options = {}) => {
         const { png } = await send('screenshot', { annotate: !!options.annotate });
         await fs.writeFile(file, Buffer.from(png, 'base64'));

@@ -12,7 +12,7 @@ public sealed partial class BrowserForm
 {
     private readonly WebView2 chromeView = new() { Dock = DockStyle.Fill };
     private readonly Panel viewport = new() { BackColor = Color.White };
-    private readonly Stack<string> closedTabs = new();
+    private readonly Stack<(string Url, string Profile)> closedTabs = new();
     private bool chromeReady;
     private bool statePending;
     private bool sidebarCollapsed;
@@ -71,10 +71,22 @@ public sealed partial class BrowserForm
         using var document = JsonDocument.Parse(json);
         var message = document.RootElement;
         BrowserTab? Target() => browserTabs.GetValueOrDefault(int.TryParse(Read(message, "id"), out var id) ? id : -1);
-        switch (Read(message, "type"))
+        var type = Read(message, "type");
+        // Account actions may open file dialogs or consoles, so they run after the WebView2 event returns.
+        if (type.StartsWith("acct.", StringComparison.Ordinal)) { var copy = message.Clone(); BeginInvoke(() => HandleAccountMessage(type, copy)); return; }
+        if (type.StartsWith("settings.", StringComparison.Ordinal)) { HandleSettingsMessage(type, message); return; }
+        if (type.StartsWith("sched.", StringComparison.Ordinal)) { HandleScheduleMessage(type, message); return; }
+        if (type.StartsWith("prof.", StringComparison.Ordinal) || type.StartsWith("cred.", StringComparison.Ordinal)) { HandleProfileMessage(type, message); return; }
+        switch (type)
         {
-            case "ready": chromeReady = true; RefreshSidebar(); PostAssistantStatus(); LoadAssistantHistory(); break;
-            case "ai.send": SubmitAssistant(Read(message, "engine"), Read(message, "text"), Read(message, "context") == "True"); break;
+            case "ready":
+                chromeReady = true; RefreshSidebar(); PostAssistantStatus(); LoadAssistantHistory();
+                PostChrome(new { type = "settings.prefs", prefs = PrefsMessage() });
+                PostAccountUsage("claude"); PostAccountUsage("codex");
+                PostChrome(ProfilesMessage());
+                break;
+            case "ai.send": SubmitAssistant(Read(message, "engine"), Read(message, "text"), Read(message, "context") == "True", Read(message, "picked")); break;
+            case "ai.pick": _ = PickElementAsync(Read(message, "engine")); break;
             case "ai.queueRemove": RemoveQueuedPrompt(Read(message, "engine"), Read(message, "id")); break;
             case "ai.queueRun": if (currentConversations.GetValueOrDefault(Read(message, "engine")) is { } queued) RunNextPrompt(queued); break;
             case "ai.setting": UpdateSetting(Read(message, "engine"), Read(message, "name"), Read(message, "value")); break;
@@ -85,7 +97,8 @@ public sealed partial class BrowserForm
             case "ai.stop": if (currentConversations.GetValueOrDefault(Read(message, "engine")) is { } stopping) StopAssistant(stopping); break;
             case "ai.reset": SelectConversation(Read(message, "engine")); break;
             case "ai.select": SelectConversation(Read(message, "engine"), Read(message, "id")); break;
-            case "ai.follow": followAssistant = Read(message, "enabled") == "True"; break;
+            case "ai.delete": DeleteConversation(Read(message, "engine"), Read(message, "id")); break;
+            case "ai.follow": prefs.FollowAgent = followAssistant = Read(message, "enabled") == "True"; SavePrefs(); break;
             case "ai.view": aiViewEngine = Engines.Contains(Read(message, "engine")) ? Read(message, "engine") : null; break;
             case "ai.focus": chromeView.Focus(); break;
             case "ai.blur": if (!paletteOpen) Active()?.View.Focus(); break;
@@ -155,7 +168,8 @@ public sealed partial class BrowserForm
             case "rec.export.end": EndExport(); break;
             case "frozen":
                 viewport.Visible = false;
-                chromeView.Focus();
+                // Refocusing a WebView2 that already has focus blurs its page for a moment, and that blur closes the palette.
+                if (!chromeView.ContainsFocus) chromeView.Focus();
                 PostChrome(new { type = "focus" });
                 break;
             case "thaw":
@@ -188,14 +202,17 @@ public sealed partial class BrowserForm
             url = active?.View.Source?.ToString() ?? "",
             loading = active?.Loading == true,
             collapsed = sidebarCollapsed,
+            userProfile,
+            profiles = profileBook.Items.Select(p => new { id = p.Id, name = p.Name, color = p.Color }).ToArray(),
             recording = recordings.Keys.ToArray(),
-            tabs = OrderedTabs().Select(tab => new
+            tabs = OrderedTabs().Where(InWorkspace).Select(tab => new
             {
                 id = tab.Id, space = tab.Space, label = tab.Agent ? SessionLabel(tab.Space) : "", agent = tab.Agent,
                 title = tab.View.CoreWebView2?.DocumentTitle ?? "",
                 url = tab.View.Source?.ToString() ?? "",
                 favicon = tab.View.CoreWebView2?.FaviconUri ?? "",
-                loading = tab.Loading, busy = tab.PendingCommands > 0
+                loading = tab.Loading, busy = tab.PendingCommands > 0, profile = tab.Profile,
+                sessionProfile = tab.Agent ? sessions.GetValueOrDefault(tab.Space)?.Profile : null
             }).ToArray()
         };
     }

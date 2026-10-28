@@ -12,17 +12,18 @@ public sealed partial class BrowserForm
 
     // A message for a busy conversation joins the turn in progress, as in the terminal; it waits in the queue only
     // when the CLI can no longer take it (for example while the run is finishing).
-    private void SubmitAssistant(string engine, string text, bool withContext)
+    private void SubmitAssistant(string engine, string text, bool withContext, string picked = "")
     {
         if (!Engines.Contains(engine) || (string.IsNullOrWhiteSpace(text) && pendingImages[engine].Count == 0)) return;
         LoadAssistantHistory();
         var chat = currentConversations[engine];
         var context = withContext && Active() is { } tab
-            ? $"[pluck] 사용자가 보고 있는 탭: \"{tab.View.CoreWebView2?.DocumentTitle}\" — {tab.View.Source} (tab id {tab.Id})\n\n" : "";
+            ? $"[pluck] 사용자가 보고 있는 탭: \"{tab.View.CoreWebView2?.DocumentTitle}\" — {tab.View.Source} (tab id {tab.Id}{(tab.Profile == DefaultProfile ? "" : $", 프로필 {ProfileName(tab.Profile)}")})\n\n" : "";
+        context += PickedContext(picked);
         var images = pendingImages[engine].ToArray();
         pendingImages[engine].Clear();
         PostImages(engine);
-        if (aiRuns.TryGetValue(chat.Id, out var run))
+        if (prefs.FollowUp == "steer" && aiRuns.TryGetValue(chat.Id, out var run))
         {
             var steered = false;
             try { steered = run.Steer(context + (string.IsNullOrWhiteSpace(text) ? "첨부한 사진을 살펴봐 주세요." : text.Trim()), images); }
