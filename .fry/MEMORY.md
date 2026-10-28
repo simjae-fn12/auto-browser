@@ -176,3 +176,10 @@
 - 사용자별 설치(관리자 권한 X) `%LOCALAPPDATA%\Programs\Oinzi`. 데이터는 `%APPDATA%\Oinzi` 그대로라 제거해도 남는다. 제거 마지막에 `oinzi.exe --unregister`가 기본 브라우저 등록·시작 프로그램 항목을 지운다(Mutex보다 먼저 처리).
 - 서명 안 된 exe라 SmartScreen "알 수 없는 게시자" 경고가 뜬다 → 없애려면 코드 서명 인증서.
 - 「시작하기」 AI 연결: Claude는 공식 `irm https://claude.ai/install.ps1 | iex`, Codex는 npm(`@openai/codex`, npm 없으면 winget으로 Node LTS 먼저), Node는 winget. 보이는 PowerShell 창에서 실행해 진행·오류를 사람이 보게 한다. 상태는 창이 다시 활성화될 때 재검사.
+
+# 이름 변경 pluck → Oinzi (Rebrand.cs), 로고
+- 첫 실행 마이그레이션: `%APPDATA%\pluck-windows-native` → `%APPDATA%\Oinzi`로 옮기고 옛 자리에 정션을 남긴다(이미 등록된 `claude mcp add` 경로, WebView2 확장 경로가 계속 동작). JSON에 저장된 절대 경로 치환, Claude `projects\<경로 인코딩>` 폴더 이름 변경(기본 ~/.claude + 계정별 CLAUDE_CONFIG_DIR), 옛 이름 스킬 폴더 삭제, 시작 프로그램·기본 브라우저 등록 이전.
+- 함정: 문서 폴더(`Documents\pluck`)는 터미널·편집기가 안에서 작업 중이면 이동이 실패한다 → 데이터 이동과 따로, 새 폴더가 비어 있는 동안 시작할 때마다 다시 시도한다.
+- 함정: 비밀번호 금고 DPAPI 엔트로피 `"pluck-site-vault-v1"`은 바꾸면 저장된 비밀번호를 못 푼다 → 이름 변경에서 제외(일부러 남김).
+- 환경 변수는 OINZI_*. 데이터 폴더만 옛 `PLUCK_NATIVE_DATA_DIR`도 받는다(테스트 스크립트 호환).
+- 로고: `native/oinzi.svg`(보라 그라데이션 타일 + 흰 O 링 + AI 반짝이)가 원본. `oinzi.ico`는 이 SVG를 Edge headless로 1024px 렌더 → Pillow로 16~256 멀티 사이즈 ICO.

@@ -777,6 +777,7 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
 .st-group > .st-row:first-child, .st-group > h4 + .st-row { border-top: 0; }
 .st-row[hidden] { display: none; }
 .st-row.stack { flex-direction: column; align-items: stretch; gap: 8px; }
+.st-row .app-logo { width: 40px; height: 40px; flex: none; }
 .st-row .lbl { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .st-row .lbl b { font-weight: 600; }
 .st-row .lbl span { color: var(--muted); font-size: 12px; line-height: 1.45; }
@@ -1245,7 +1246,7 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
         <section class="st-sec" data-sec="about">
           <h3>정보</h3>
           <div class="st-group">
-            <div class="st-row" data-kw="버전 version"><div class="lbl"><b>Oinzi</b><span data-info="version"></span></div></div>
+            <div class="st-row" data-kw="버전 version"><svg class="app-logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b7bff"/><stop offset="1" stop-color="#5a3fe0"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#logoGrad)"/><circle cx="30" cy="34" r="15" fill="none" stroke="#fff" stroke-width="8"/><path d="M49 8C49.9 13.6 50.4 14.1 56 15 50.4 15.9 49.9 16.4 49 22 48.1 16.4 47.6 15.9 42 15 47.6 14.1 48.1 13.6 49 8Z" fill="#fff"/></svg><div class="lbl"><b>Oinzi</b><span data-info="version"></span></div></div>
             <div class="st-row" data-kw="엔진 webview2 chromium edge 런타임">
               <div class="lbl"><b>브라우저 엔진</b><span>Microsoft Edge WebView2 런타임 <span data-info="runtime"></span>. Chrome과 같은 Chromium(Blink·V8) 엔진입니다.</span></div>
             </div>
