@@ -155,3 +155,7 @@
 - `Program.Main`: 데이터 폴더 경로 해시로 만든 Mutex `Local\pluck-<hash>`. 이미 있으면 같은 이름 파이프로 링크(JSON 배열)를 넘기고 종료. 넘기기에 실패하면(닫히는 중) Mutex를 15초 기다렸다가 직접 실행.
 - 받는 쪽 `ListenForLinks`는 초기화 초반에 시작하고, 탭 복원 전 도착한 링크는 `LaunchLinks`에 쌓았다가 복원 뒤 연다.
 - 함정: 테스트 인스턴스(PLUCK_NATIVE_DATA_DIR)는 다른 해시라 실제 pluck과 안 부딪힌다. 등록된 exe 경로는 그 파일이 없어졌을 때만 다시 쓴다(디버그 빌드가 기본 브라우저 등록을 가로채지 않게). node의 execFileSync로 env를 넘기면 다른 데이터 폴더로 떠서 넘기기 테스트가 틀어졌음 → PowerShell Start-Process로 테스트.
+
+# 탭 전환 포커스: 페이지 첫 링크(「바로가기」)에 포커스 링 (PageView)
+- 함정: TabControl 탭을 바꾸면 WinForms가 새 페이지 첫 컨트롤을 Tab 이동처럼 `Select(directed: true)` → WebView2가 `_lastMoveFocusReason = Next`로 기억했다가 페이지 안에 Tab을 넣음 → 네이버 「상단영역 바로가기」 같은 skip link가 :focus-visible로 뜬다.
+- 해결: 탭 WebView는 `PageView`(WebView2 하위 클래스)로 만들고, 실제 Tab 키가 눌려 있을 때만 directed로 넘긴다. 탭 WebView를 새로 만들 때 `new WebView2` 대신 `PageView`를 써야 한다.

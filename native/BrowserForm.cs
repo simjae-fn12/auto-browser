@@ -240,7 +240,7 @@ public sealed partial class BrowserForm : Form
             throw new InvalidOperationException("Agent tab limit reached (20 per space, 60 total). Close unused tabs first.");
         var id = nextId++;
         var page = new TabPage(space == "user" ? "새 탭" : $"◆ {SessionLabel(space)} {id}") { Padding = Padding.Empty, BackColor = Color.White };
-        var view = new WebView2 { Dock = DockStyle.Fill };
+        var view = new PageView { Dock = DockStyle.Fill };
         view.KeyDown += OnShortcut;
         page.Controls.Add(view);
         var tab = new BrowserTab(id, space, page, view, owner, profile) { Order = nextOrder++ };

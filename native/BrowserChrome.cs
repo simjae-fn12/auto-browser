@@ -352,4 +352,15 @@ public sealed partial class BrowserForm
             base.WndProc(ref message);
         }
     }
+
+    // Switching tabs makes WinForms select the new page's first control as if by Tab, and WebView2 passes that on as a
+    // Tab into the page: the first link (Naver's 「바로가기」 skip link) gets a focus ring. Only a real Tab press counts.
+    private sealed class PageView : WebView2
+    {
+        protected override void Select(bool directed, bool forward) =>
+            base.Select(directed && (GetKeyState((int)Keys.Tab) & 0x8000) != 0, forward);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern short GetKeyState(int key);
 }
