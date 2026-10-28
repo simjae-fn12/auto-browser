@@ -9,7 +9,7 @@
     <AssemblyName>oinzi</AssemblyName>
     <Product>Oinzi</Product>
     <Title>Oinzi</Title>
-    <Version>0.9.0</Version>
+    <Version>0.9.1</Version>
     <ApplicationIcon>oinzi.ico</ApplicationIcon>
   </PropertyGroup>
 

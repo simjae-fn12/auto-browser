@@ -193,7 +193,12 @@
 - 규칙: 설치·로그인을 터미널 창에 떠넘기지 않는다. 첫 안내는 설정이 아니라 전용 환영 화면(#onboard). 사용자가 "터미널 왜 띄우냐", "온보딩이 설정에 있는 게 맞냐"고 강하게 지적함.
 - 첫 실행(prefs.SetupOffered=false, 할 일이 있을 때) → `OpenOnboardingAsync`. 설정 「시작하기」의 「시작 안내 다시 열기」로도 연다. 설정과 같은 frozen viewport 방식(paletteOpen).
 - Claude 설치: 공식 install.ps1과 같은 순서를 C#으로(downloads.claude.ai `latest` → `manifest.json` checksum(sha256 소문자) → claude.exe 다운로드(진행률) → 검증 → `claude.exe install` 숨김 실행 → `~\.localin`을 사용자 PATH에). 공식 스크립트는 PATH를 안 넣을 때가 있어 터미널에서 `claude`가 안 잡혔음.
-- Codex 설치: Node/npm 없이 GitHub 최신 릴리스의 `codex-package-<arch>-pc-windows-msvc.tar.gz`(bin\codex.exe, codex-pathg.exe, codex-resources\…; npm 패키지와 같은 구성)를 `%LOCALAPPDATA%\Programs\Oinzi\codex`에 풀고 bin을 PATH에. FindTool이 이 경로를 본다.
+- Codex 설치: Node/npm 없이 GitHub 최신 릴리스의 `codex-package-<arch>-pc-windows-msvc.tar.gz`(bin\codex.exe, codex-path
+g.exe, codex-resources\…; npm 패키지와 같은 구성)를 `%LOCALAPPDATA%\Programs\Oinzi\codex`에 풀고 bin을 PATH에. FindTool이 이 경로를 본다.
 - 로그인: 기존 앱 안 로그인(숨김 CLI + Oinzi 탭) 유지. 로그인 탭이 열리면 환영 화면이 잠시 비켜 주고(`ob.resume`), 로그인이 끝나면 다시 연다. 실패 이유는 Account.LoginError로 계정 옆에 표시.
 - 설치·로그인 과정은 모두 `%APPDATA%\Oinzi\logs\setup.log`에 남는다 → 다른 PC 문제는 이 파일을 받아서 본다.
 - 함정: 상태 클래스 이름 `busy`가 탭의 `.busy`(점 표시, display:none) 규칙과 충돌해 레이아웃이 깨졌음 → 온보딩 상태 클래스는 `is-*`.
+- 환영 화면은 `prefs.OnboardingDone`이 false인 동안 시작할 때마다 연다(닫을 때 `onboarding.closed`로 true). 예전 `SetupOffered`는 열기 전에 true가 돼서, 제거 후 재설치(데이터 폴더는 남음)에서도 다시 안 떴다.
+- 버전은 native.csproj `<Version>`. 설치 파일 이름·환영 화면·정보에 나온다. 다른 PC에 새 빌드를 줄 때는 꼭 올린다(같은 0.9.0이라 새 파일인지 구분 못 한 적 있음).
+- Codex 로그인 여부는 auth.json 존재가 아니라 `codex --no-daemon login status` 종료 코드로 판단. 「로그아웃」/「다른 계정으로」는 CLI의 `logout`(`claude auth logout`)을 숨김 실행.
+- 제거 시 Oinzi 데이터 삭제 여부를 묻는다(조용한 제거면 안 지움). ~/.claude, ~/.codex 로그인은 Oinzi 것이 아니라 절대 지우지 않는다.

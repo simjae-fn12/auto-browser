@@ -153,7 +153,7 @@ public sealed partial class BrowserForm : Form
             cleanupTimer.Start();
             try { RefreshBrowserRegistration(); }
             catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException) { }
-            if (!prefs.SetupOffered) _ = OfferSetupAsync();
+            if (!prefs.OnboardingDone) _ = OfferSetupAsync();
         }
         catch (Exception ex)
         {

@@ -248,20 +248,18 @@ public sealed partial class BrowserForm
         }
         paletteOpen = true;
         LoadAccounts();
-        PostChrome(new { type = "onboarding", shot });
+        PostChrome(new { type = "onboarding", shot, version = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(BrowserForm).Assembly)?.InformationalVersion?.Split('+')[0] ?? "" });
         PostSetupState();
         PostAccounts();
         // Signed in or out elsewhere since the last look (a CLI just installed, a login in another window).
         foreach (var account in accounts.Items.Where(a => a.Id == DefaultAccount || a.LoggedIn == null)) _ = CheckAccountAsync(account);
     }
 
-    // Shown once on a new install, only when there is something to do.
+    // Shown at start until the person closes it (「시작하기」 or 「나중에 할게요」), so a reinstall that keeps the data
+    // folder does not skip it before it was ever seen.
     private async Task OfferSetupAsync()
     {
         for (var i = 0; i < 200 && !chromeReady; i++) await Task.Delay(50);
-        prefs.SetupOffered = true;
-        SavePrefs();
-        if (IsDefaultBrowser() && FindBrowserProfiles().All(p => ImportedFrom(p) != null) && FindTool("claude") != null && FindTool("codex") != null) return;
         await Task.Delay(600);
         await OpenOnboardingAsync();
     }

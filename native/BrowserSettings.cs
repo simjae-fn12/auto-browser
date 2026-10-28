@@ -27,8 +27,8 @@ public sealed partial class BrowserForm
         public bool NotifyDone { get; set; } = true;
         public bool DoneSound { get; set; } = true;
         public string CustomInstructions { get; set; } = "";
-        // The 「시작하기」 page (other browsers' profiles, default browser) opens by itself only on the first start.
-        public bool SetupOffered { get; set; }
+        // The welcome screen opens at start until the person closes it once.
+        public bool OnboardingDone { get; set; }
     }
 
     private static readonly Dictionary<string, string> SearchEngines = new()

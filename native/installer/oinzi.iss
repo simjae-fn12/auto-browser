@@ -1,9 +1,11 @@
-; Oinzi installer (Inno Setup 6). Build with installer\build.ps1, which publishes to publish-installer first.
+﻿; Oinzi installer (Inno Setup 6). Build with installer\build.ps1, which publishes to publish-installer first.
 ; Installs per user (no admin rights), like the browser's own data in %APPDATA%\Oinzi.
 
 #define AppExe "oinzi.exe"
 #define Source AddBackslash(SourcePath) + "..\publish-installer"
-#define AppVersion GetVersionNumbersString(Source + "\" + AppExe)
+#define FullVersion GetVersionNumbersString(Source + "\" + AppExe)
+; 0.9.1.0 -> 0.9.1
+#define AppVersion Copy(FullVersion, 1, RPos(".", FullVersion) - 1)
 
 [Setup]
 AppId={{0A3A9DE7-B2ED-4FC2-A4B7-63B8A6E9E5AB}
@@ -70,4 +72,23 @@ begin
   if (CurStep = ssPostInstall) and not WebView2Installed() then
     if MsgBox('Oinzi에는 Microsoft WebView2 Runtime이 필요합니다. 지금 다운로드 페이지를 열까요?', mbConfirmation, MB_YESNO) = IDYES then
       ShellExec('open', 'https://developer.microsoft.com/microsoft-edge/webview2/#download', '', '', SW_SHOWNORMAL, ewNoWait, Code);
+end;
+
+// Uninstalling keeps Oinzi's data (logins, profiles, settings) unless the person asks to remove it, so a reinstall can
+// carry on. Claude Code and Codex logins live in their own folders (~\.claude, ~\.codex) and are never touched here.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Data: String;
+begin
+  if CurUninstallStep <> usPostUninstall then exit;
+  Data := ExpandConstant('{userappdata}\Oinzi');
+  if not DirExists(Data) then exit;
+  if UninstallSilent then exit;
+  if MsgBox('Oinzi의 설정·브라우저 로그인·프로필·대화 기록까지 지울까요?' + #13#10 + #13#10 +
+            '아니요를 누르면 다시 설치했을 때 그대로 이어서 쓸 수 있어요.' + #13#10 +
+            '(Claude Code·Codex 로그인은 Oinzi 것이 아니라서 지우지 않아요.)', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+  begin
+    DelTree(Data, True, True, True);
+    DelTree(ExpandConstant('{userappdata}\pluck-windows-native'), True, True, True);
+  end;
 end;

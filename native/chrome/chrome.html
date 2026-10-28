@@ -1051,7 +1051,7 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
 <div id="onboard" hidden>
   <div class="scrim"></div>
   <div class="ob-panel" role="dialog" aria-label="Oinzi 시작하기" tabindex="-1">
-    <div class="ob-head"><svg class="ob-logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="obLogoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b7bff"/><stop offset="1" stop-color="#5a3fe0"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#obLogoGrad)"/><circle cx="30" cy="34" r="15" fill="none" stroke="#fff" stroke-width="8"/><path d="M49 8C49.9 13.6 50.4 14.1 56 15 50.4 15.9 49.9 16.4 49 22 48.1 16.4 47.6 15.9 42 15 47.6 14.1 48.1 13.6 49 8Z" fill="#fff"/></svg><div><h1>Oinzi에 오신 걸 환영해요</h1><p>세 가지만 준비하면 바로 쓸 수 있어요. 건너뛰어도 나중에 설정 → 시작하기에서 다시 할 수 있어요.</p></div></div>
+    <div class="ob-head"><svg class="ob-logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="obLogoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b7bff"/><stop offset="1" stop-color="#5a3fe0"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#obLogoGrad)"/><circle cx="30" cy="34" r="15" fill="none" stroke="#fff" stroke-width="8"/><path d="M49 8C49.9 13.6 50.4 14.1 56 15 50.4 15.9 49.9 16.4 49 22 48.1 16.4 47.6 15.9 42 15 47.6 14.1 48.1 13.6 49 8Z" fill="#fff"/></svg><div><h1>Oinzi에 오신 걸 환영해요 <small id="obVersion" style="font-size:12px;font-weight:500;color:var(--muted)"></small></h1><p>세 가지만 준비하면 바로 쓸 수 있어요. 건너뛰어도 나중에 설정 → 시작하기에서 다시 할 수 있어요.</p></div></div>
     <div class="ob-step" data-ob-step="ai"><div class="ob-num">1</div><div class="ob-body"><h2>AI 연결</h2><p>Oinzi 안에서 일할 AI예요. 둘 중 하나만 있어도 돼요. 설치와 로그인 모두 이 화면에서 끝나요.</p>
       <div class="ob-tools">
         <div class="ob-tool" data-ob-tool="claude"><i class="edot" style="background:var(--claude)"></i><div class="info"><b>Claude Code</b><span class="state"></span><div class="ob-bar" hidden><i></i></div></div><button class="st-btn"></button></div>
@@ -2386,7 +2386,7 @@ function renderAccounts() {
         + (usage ? `<div class="meter">${usage}<span>${ago(item.usageAt)}</span></div>` : '') + `</div>`
         + `<div class="ops">`
         + (item.loggingIn ? '<button data-op="login">탭 보기</button><button data-op="cancelLogin">취소</button>'
-          : `<button data-op="login">${item.loggedIn === false ? '로그인' : '다시 로그인'}</button>`)
+          : `<button data-op="login">${item.loggedIn === false ? '로그인' : '다시 로그인'}</button>` + (item.loggedIn ? '<button data-op="logout">로그아웃</button>' : ''))
         + (item.isDefault ? '' : '<button data-op="import" title="저장해 둔 자격 증명 파일로 바꿉니다">파일</button>')
         + `<button data-op="rename">이름</button>`
         + `<button data-op="terminal" title="이 계정을 쓰는 PowerShell 명령을 복사합니다">터미널</button>`
@@ -2431,6 +2431,7 @@ settingsEl.addEventListener('click', event => {
     case 'use': send('acct.use', { engine, id }); break;
     case 'login': send('acct.login', { engine, id }); break;
     case 'cancelLogin': send('acct.cancelLogin', { engine, id }); break;
+    case 'logout': arm(event.target.closest('[data-op]'), 'logout/' + engine + id, () => send('acct.logout', { engine, id })); break;
     case 'import': send('acct.import', { engine, id }); break;
     case 'terminal': send('acct.terminal', { engine, id }); break;
     case 'rename': st.renaming = `${engine}/${id}`; renderAccounts(); break;
@@ -2725,13 +2726,15 @@ function aiToolState(engine) {
   if (account.loggingIn) return { kind: 'busy', html: account.loginCode
       ? `열린 탭에 코드 <span class="code">${escapeHtml(account.loginCode)}</span>를 넣으세요(클립보드에 복사됨).`
       : 'Oinzi 탭에서 로그인하는 중이에요.', action: 'login', label: '로그인 탭 보기', id: account.id };
-  if (account.loggedIn) return { kind: 'ok', text: '연결됨' + (account.email ? ` · ${account.email}` : '') + (account.plan ? ` · ${account.plan}` : '') };
+  if (account.loggedIn) return { kind: 'ok', text: '연결됨' + (account.email ? ` · ${account.email}` : '') + (account.plan ? ` · ${account.plan}` : ''),
+    action: 'logout', label: '다른 계정으로', id: account.id };
   if (account.loggedIn == null || account.checking) return { kind: 'busy', text: '로그인 상태를 확인하는 중…' };
   return { kind: account.loginError ? 'error' : 'login', text: account.loginError ? `로그인하지 못했어요: ${account.loginError}` : '설치됨 · 로그인이 필요해요.',
     action: 'login', label: account.loginError ? '다시 로그인' : '로그인', id: account.id };
 }
 function aiToolAction(engine, state) {
   if (state.action === 'install') send('setup.install', { tool: engine });
+  else if (state.action === 'logout') send('acct.logout', { engine, id: state.id });
   else if (state.action === 'login') {
     const book = st.accounts?.[engine];
     ob.resume = ob.open ? engine : null;
@@ -2794,6 +2797,7 @@ function renderOnboarding() {
 }
 function openOnboarding(message) {
   ob.resume = null;
+  if (message.version) $('#obVersion').textContent = 'v' + message.version;
   if (ob.open) { renderOnboarding(); return; }
   const fromOverlay = dismissOverview() || dismissPaletteForSettings() || dismissSettings();
   ob.open = true;
@@ -2810,6 +2814,7 @@ function openOnboarding(message) {
 function closeOnboarding() {
   if (!ob.open) return;
   ob.open = false;
+  if (!ob.resume) send('onboarding.closed');
   onboardEl.classList.remove('in');
   document.body.classList.remove('settings');
   setTimeout(() => {

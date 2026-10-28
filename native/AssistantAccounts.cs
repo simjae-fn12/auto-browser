@@ -219,6 +219,7 @@ public sealed partial class BrowserForm
                 break;
             case "acct.login" when FindAccount(engine, id) is { } login: StartLogin(login); break;
             case "acct.cancelLogin": CancelLogin(engine + "/" + id); break;
+            case "acct.logout" when FindAccount(engine, id) is { } leaving: _ = LogoutAsync(leaving); return;
             case "acct.import" when FindAccount(engine, id) is { Id: not DefaultAccount } target:
                 if (PickCredentials(engine) is { } file) ImportCredentials(target, file);
                 break;
@@ -468,7 +469,7 @@ public sealed partial class BrowserForm
             var dir = account.Id == DefaultAccount ? null : AccountDir(account.Engine, account.Id);
             var (loggedIn, email, plan) = account.Engine == "claude"
                 ? await Task.Run(() => ClaudeLoginStatus(dir))
-                : CodexLoginStatus(dir ?? DefaultConfigDir("codex"));
+                : await Task.Run(() => CodexLoginStatus(dir ?? DefaultConfigDir("codex")));
             if (FindAccount(account.Engine, account.Id) != account) return;
             account.LoggedIn = loggedIn;
             // A signed-out account must not keep showing whoever was signed in there before.
@@ -510,8 +511,65 @@ public sealed partial class BrowserForm
         { return (false, null, null); }
     }
 
-    // Codex keeps the signed-in identity in the id_token of auth.json; reading it avoids starting the CLI.
+    // Signs the account out with the CLI's own command, so its credential file is removed the way the CLI expects.
+    private async Task LogoutAsync(Account account)
+    {
+        if (FindTool(account.Engine) is not { } exe) return;
+        var info = new ProcessStartInfo(exe)
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, WorkingDirectory = UserHome
+        };
+        IsolateAssistantEnvironment(info);
+        if (account.Id != DefaultAccount) info.Environment[account.Engine == "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME"] = AccountDir(account.Engine, account.Id);
+        var output = await Task.Run(() =>
+        {
+            if (account.Engine == "codex") AddCodexDaemonFlag(info);
+            foreach (var arg in account.Engine == "claude" ? new[] { "auth", "logout" } : ["logout"]) info.ArgumentList.Add(arg);
+            try
+            {
+                using var process = Process.Start(info);
+                if (process == null) return "did not start";
+                var text = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+                if (!process.WaitForExit(20000)) Kill(process);
+                return $"exit {process.ExitCode}: {text.Trim()}";
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException) { return ex.Message; }
+        });
+        LogSetup($"{account.Engine} logout ({account.Id}): {output}");
+        account.LoggedIn = false;
+        account.Email = null;
+        account.Plan = null;
+        account.LoginError = null;
+        SaveAccounts();
+        PostAccounts();
+        _ = CheckAccountAsync(account);
+    }
+
+    // The identity comes from the id_token in auth.json; whether it still counts as signed in is the CLI's answer.
     private static (bool LoggedIn, string? Email, string? Plan) CodexLoginStatus(string dir)
+    {
+        var (found, email, plan) = CodexAuthFile(dir);
+        if (!found || FindTool("codex") is not { } exe) return (found, email, plan);
+        var info = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = UserHome };
+        IsolateAssistantEnvironment(info);
+        info.Environment["CODEX_HOME"] = dir;
+        AddCodexDaemonFlag(info);
+        info.ArgumentList.Add("login");
+        info.ArgumentList.Add("status");
+        try
+        {
+            using var process = Process.Start(info);
+            if (process == null) return (found, email, plan);
+            _ = process.StandardOutput.ReadToEndAsync();
+            _ = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(20000)) { Kill(process); return (found, email, plan); }
+            return process.ExitCode == 0 ? (true, email, plan) : (false, null, null);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException) { return (found, email, plan); }
+    }
+
+    private static (bool LoggedIn, string? Email, string? Plan) CodexAuthFile(string dir)
     {
         try
         {
