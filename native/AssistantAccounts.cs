@@ -22,6 +22,8 @@ public sealed partial class BrowserForm
         public double? Five { get; set; }
         public double? Week { get; set; }
         public DateTime? UsageAt { get; set; }
+        // Why the last login failed, shown next to the account until the next attempt.
+        [System.Text.Json.Serialization.JsonIgnore] public string? LoginError { get; set; }
     }
 
     private sealed class AccountBook
@@ -164,7 +166,7 @@ public sealed partial class BrowserForm
             {
                 id = a.Id, name = a.Name, email = a.Email ?? "", plan = a.Plan ?? "", loggedIn = a.LoggedIn,
                 checking = accountChecks.Contains(engine + "/" + a.Id), loggingIn = accountLogins.ContainsKey(engine + "/" + a.Id),
-                loginCode = accountLogins.GetValueOrDefault(engine + "/" + a.Id)?.Code, isDefault = a.Id == DefaultAccount,
+                loginCode = accountLogins.GetValueOrDefault(engine + "/" + a.Id)?.Code, isDefault = a.Id == DefaultAccount, loginError = a.LoginError,
                 five = a.Five, week = a.Week, usageAt = a.UsageAt,
                 running = aiRuns.Values.Count(run => run.Chat.Engine == engine && (run.Chat.SessionAccount ?? DefaultAccount) == a.Id),
                 path = a.Id == DefaultAccount ? DefaultConfigDir(engine) : AccountDir(engine, a.Id)
@@ -320,12 +322,15 @@ public sealed partial class BrowserForm
         if (process == null) return;
         var login = new LoginRun(process);
         accountLogins[key] = login;
+        account.LoginError = null;
+        LogSetup($"{account.Engine} login started ({account.Id}): {info.FileName} {string.Join(' ', info.ArgumentList)}");
         PostAccounts();
         void Watch(StreamReader reader) => _ = Task.Run(async () =>
         {
             while (await reader.ReadLineAsync() is { } line)
             {
                 lock (login.Output) { login.Output.Enqueue(line); if (login.Output.Count > 8) login.Output.Dequeue(); }
+                OnUi(() => LogSetup($"{account.Engine} login: {line}"));
                 OnUi(() => OnLoginOutput(account, login, line));
             }
         });
@@ -383,11 +388,13 @@ public sealed partial class BrowserForm
         var ok = login.Process.ExitCode == 0;
         string tail;
         lock (login.Output) tail = string.Join(" ", login.Output.Select(line => System.Text.RegularExpressions.Regex.Replace(line, @"\x1b\[[0-9;]*m", "").Trim()).Where(line => line.Length > 0).TakeLast(2));
+        LogSetup($"{account.Engine} login ended: exit {login.Process.ExitCode}{(login.Cancelled ? " (cancelled)" : "")}");
         login.Process.Dispose();
         if (login.TabId is { } tabId && browserTabs.GetValueOrDefault(tabId) is { } tab && ok) CloseTab(tab);
         if (FindAccount(account.Engine, account.Id) != account) return;
+        if (!ok && !login.Cancelled) account.LoginError = tail.Length > 0 ? Clip(tail, 200) : "로그인 과정이 오류로 끝났어요.";
         if (!login.Cancelled)
-            PostChrome(new { type = "toast", text = ok ? $"{account.Name} 계정에 로그인했어요." : "로그인하지 못했어요. " + Clip(tail, 200) });
+            PostChrome(new { type = "toast", text = ok ? $"{account.Name} 계정에 로그인했어요." : "로그인하지 못했어요. " + account.LoginError });
         _ = CheckAccountAsync(account);
     }
 

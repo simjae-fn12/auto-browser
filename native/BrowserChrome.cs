@@ -78,6 +78,7 @@ public sealed partial class BrowserForm
         if (type.StartsWith("sched.", StringComparison.Ordinal)) { HandleScheduleMessage(type, message); return; }
         if (type.StartsWith("prof.", StringComparison.Ordinal) || type.StartsWith("cred.", StringComparison.Ordinal)) { HandleProfileMessage(type, message); return; }
         if (type.StartsWith("setup.", StringComparison.Ordinal)) { HandleSetupMessage(type, message); return; }
+        if (type == "onboarding.open") { _ = OpenOnboardingAsync(); return; }
         if (type.StartsWith("ext.", StringComparison.Ordinal)) { _ = HandleExtensionMessageAsync(type, message.Clone()); return; }
         switch (type)
         {

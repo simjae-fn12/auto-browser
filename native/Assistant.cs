@@ -108,6 +108,7 @@ public sealed partial class BrowserForm
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries)
             .Append(Path.Combine(home, ".local", "bin"))
+            .Append(Path.Combine(CodexInstallDir, "bin"))
             .Append(Path.Combine(local, "Programs", "OpenAI", "Codex", "bin"))
             .Append(Path.Combine(local, "Microsoft", "WinGet", "Links"))
             // npm installs only a codex.cmd shim on PATH; the native binary sits inside the package.

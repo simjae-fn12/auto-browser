@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 
 namespace OinziBrowser;
@@ -208,6 +209,7 @@ public sealed partial class BrowserForm
         {
             type = "setup.state", isDefault = IsDefaultBrowser(),
             tools = new { claude = FindTool("claude") != null, codex = FindTool("codex") != null, node = FindNode() != null },
+            installing = ToolProgressMessage(),
             browsers = OtherBrowsers.Select(b => new { label = b.Label, count = found.Count(p => p.Browser == b), fresh = fresh.Count(p => p.Browser == b) })
                 .Where(b => b.count > 0).ToArray()
         });
@@ -219,7 +221,7 @@ public sealed partial class BrowserForm
         {
             case "setup.state": break;
             case "setup.default": MakeDefaultBrowser(); break;
-            case "setup.install": InstallTool(Read(message, "tool")); break;
+            case "setup.install": _ = InstallToolAsync(Read(message, "tool")); break;
             case "setup.import":
                 var added = ImportBrowserProfiles();
                 SaveProfiles();
@@ -232,6 +234,27 @@ public sealed partial class BrowserForm
         PostSetupState();
     }
 
+    // The welcome screen: AI tools, moving in from Chrome/Edge, default browser. It opens over a frozen viewport like settings.
+    private async Task OpenOnboardingAsync()
+    {
+        if (!chromeReady) return;
+        while (sidebarPreparing || sidebarMotion) await Task.Delay(16);
+        string? shot = null;
+        if (!paletteOpen && viewport.Visible && Active()?.View.CoreWebView2 is { } core)
+        {
+            var capture = CaptureAsync(core, CoreWebView2CapturePreviewImageFormat.Jpeg);
+            if (await Task.WhenAny(capture, Task.Delay(CaptureWait)) == capture && await capture is { } bytes)
+                shot = "data:image/jpeg;base64," + Convert.ToBase64String(bytes);
+        }
+        paletteOpen = true;
+        LoadAccounts();
+        PostChrome(new { type = "onboarding", shot });
+        PostSetupState();
+        PostAccounts();
+        // Signed in or out elsewhere since the last look (a CLI just installed, a login in another window).
+        foreach (var account in accounts.Items.Where(a => a.Id == DefaultAccount || a.LoggedIn == null)) _ = CheckAccountAsync(account);
+    }
+
     // Shown once on a new install, only when there is something to do.
     private async Task OfferSetupAsync()
     {
@@ -240,41 +263,15 @@ public sealed partial class BrowserForm
         SavePrefs();
         if (IsDefaultBrowser() && FindBrowserProfiles().All(p => ImportedFrom(p) != null) && FindTool("claude") != null && FindTool("codex") != null) return;
         await Task.Delay(600);
-        await OpenSettingsAsync("start");
+        await OpenOnboardingAsync();
     }
 
-    // Node runs terminal agents (agent.mjs, mcp.mjs) and npm installs Codex.
+    // Node runs terminal agents (agent.mjs, mcp.mjs); the AI panel does not need it.
     private static string? FindNode() =>
         (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries)
             .Append(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs"))
             .Select(dir => { try { return Path.Combine(dir.Trim().Trim('"'), "node.exe"); } catch (ArgumentException) { return ""; } })
             .FirstOrDefault(File.Exists);
-
-    // Each tool's official install command, run in a visible PowerShell window so the person sees progress, prompts and
-    // errors. Oinzi re-checks when its window is active again.
-    private const string NodeInstall = "winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements; "
-        + "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); ";
-    private static readonly Dictionary<string, (string Name, string Script)> ToolInstallers = new()
-    {
-        // The installer puts claude.exe in ~\.localin but does not always add that folder to PATH, so `claude` would not
-        // be found in a new terminal.
-        ["claude"] = ("Claude Code", "irm https://claude.ai/install.ps1 | iex; $bin = [IO.Path]::Combine($env:USERPROFILE, '.local', 'bin'); "
-            + "$user = [string][Environment]::GetEnvironmentVariable('Path','User'); if (($user -split ';') -notcontains $bin) { [Environment]::SetEnvironmentVariable('Path', ($user.TrimEnd(';') + ';' + $bin), 'User'); Write-Host 'PATH에 추가했습니다:' $bin }; "),
-        ["codex"] = ("Codex", "if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { " + NodeInstall + "} npm install -g @openai/codex; "),
-        ["node"] = ("Node.js", NodeInstall)
-    };
-
-    private void InstallTool(string tool)
-    {
-        if (!ToolInstallers.TryGetValue(tool, out var installer)) return;
-        var script = $"$Host.UI.RawUI.WindowTitle = '{installer.Name} 설치'; Write-Host '{installer.Name}을(를) 설치합니다.'; " + installer.Script
-            + "Write-Host ''; Read-Host '끝났습니다. Enter를 누르면 창이 닫힙니다. Oinzi로 돌아가면 설치 상태가 바뀝니다'";
-        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false };
-        foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script }) start.ArgumentList.Add(arg);
-        try { Process.Start(start); }
-        catch (System.ComponentModel.Win32Exception ex) { PostChrome(new { type = "settings.note", text = "설치 창을 열지 못했습니다: " + ex.Message }); return; }
-        PostChrome(new { type = "settings.note", text = $"{installer.Name} 설치 창을 열었습니다. 끝나면 「AI 계정」에서 로그인하세요." });
-    }
 
     internal static string DataDirectory { get; } = Environment.GetEnvironmentVariable("OINZI_DATA_DIR")
         ?? Environment.GetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR")

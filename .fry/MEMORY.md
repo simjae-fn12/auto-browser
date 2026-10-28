@@ -175,7 +175,6 @@
 - `native/installer/build.ps1` → self-contained publish(`publish-installer`) → ISCC → `native/dist/oinzi-setup-<ver>.exe`(약 35MB). 버전은 native.csproj `<Version>`. Inno Setup 6 필요(`winget install JRSoftware.InnoSetup`, 사용자 범위 설치면 `%LOCALAPPDATA%\Programs\Inno Setup 6`).
 - 사용자별 설치(관리자 권한 X) `%LOCALAPPDATA%\Programs\Oinzi`. 데이터는 `%APPDATA%\Oinzi` 그대로라 제거해도 남는다. 제거 마지막에 `oinzi.exe --unregister`가 기본 브라우저 등록·시작 프로그램 항목을 지운다(Mutex보다 먼저 처리).
 - 서명 안 된 exe라 SmartScreen "알 수 없는 게시자" 경고가 뜬다 → 없애려면 코드 서명 인증서.
-- 「시작하기」 AI 연결: Claude는 공식 `irm https://claude.ai/install.ps1 | iex`, Codex는 npm(`@openai/codex`, npm 없으면 winget으로 Node LTS 먼저), Node는 winget. 보이는 PowerShell 창에서 실행해 진행·오류를 사람이 보게 한다. 상태는 창이 다시 활성화될 때 재검사.
 
 # 이름 변경 pluck → Oinzi (Rebrand.cs), 로고
 - 첫 실행 마이그레이션: `%APPDATA%\pluck-windows-native` → `%APPDATA%\Oinzi`로 옮기고 옛 자리에 정션을 남긴다(이미 등록된 `claude mcp add` 경로, WebView2 확장 경로가 계속 동작). JSON에 저장된 절대 경로 치환, Claude `projects\<경로 인코딩>` 폴더 이름 변경(기본 ~/.claude + 계정별 CLAUDE_CONFIG_DIR), 옛 이름 스킬 폴더 삭제, 시작 프로그램·기본 브라우저 등록 이전.
@@ -186,6 +185,15 @@
 
 # 다른 PC 설치에서 겪은 문제 (Codex daemon, Claude PATH, 기본 계정)
 - Codex 0.16x는 기본으로 공유 백그라운드 서버(daemon)를 통해 돈다. 다른 프로그램의 서버(Codex 데스크톱 앱, 관리자 권한으로 띄운 것)면 "액세스가 거부되었습니다 (os error 5)". → Oinzi가 띄우는 codex(app-server, login)는 `--help`에 `--no-daemon`이 있으면 붙인다(`AddCodexDaemonFlag`).
-- Claude 공식 설치 스크립트는 `~\.local\bin`을 PATH에 넣지 않을 때가 있어 터미널에서 `claude`가 안 잡힌다(Oinzi는 FindTool이 그 폴더를 직접 봐서 동작). 「시작하기」 설치는 사용자 PATH에 추가까지 한다.
 - 「기본 계정」= 그 Windows 사용자 폴더(~/.claude, ~/.codex)에 이미 있던 로그인. 설치 파일에는 계정 데이터가 없다. 로그아웃 상태에서 예전 이메일이 남아 보이던 문제 → 로그인 아님이면 이메일·요금제 표시를 지운다.
 - Codex 기기 코드가 링크보다 먼저(또는 같은 줄에) 나오면 놓치던 문제 → 순서와 상관없이 잡는다.
+
+
+# 온보딩 화면 · 앱 안 설치 (ToolInstall.cs, chrome.html #onboard)
+- 규칙: 설치·로그인을 터미널 창에 떠넘기지 않는다. 첫 안내는 설정이 아니라 전용 환영 화면(#onboard). 사용자가 "터미널 왜 띄우냐", "온보딩이 설정에 있는 게 맞냐"고 강하게 지적함.
+- 첫 실행(prefs.SetupOffered=false, 할 일이 있을 때) → `OpenOnboardingAsync`. 설정 「시작하기」의 「시작 안내 다시 열기」로도 연다. 설정과 같은 frozen viewport 방식(paletteOpen).
+- Claude 설치: 공식 install.ps1과 같은 순서를 C#으로(downloads.claude.ai `latest` → `manifest.json` checksum(sha256 소문자) → claude.exe 다운로드(진행률) → 검증 → `claude.exe install` 숨김 실행 → `~\.localin`을 사용자 PATH에). 공식 스크립트는 PATH를 안 넣을 때가 있어 터미널에서 `claude`가 안 잡혔음.
+- Codex 설치: Node/npm 없이 GitHub 최신 릴리스의 `codex-package-<arch>-pc-windows-msvc.tar.gz`(bin\codex.exe, codex-pathg.exe, codex-resources\…; npm 패키지와 같은 구성)를 `%LOCALAPPDATA%\Programs\Oinzi\codex`에 풀고 bin을 PATH에. FindTool이 이 경로를 본다.
+- 로그인: 기존 앱 안 로그인(숨김 CLI + Oinzi 탭) 유지. 로그인 탭이 열리면 환영 화면이 잠시 비켜 주고(`ob.resume`), 로그인이 끝나면 다시 연다. 실패 이유는 Account.LoginError로 계정 옆에 표시.
+- 설치·로그인 과정은 모두 `%APPDATA%\Oinzi\logs\setup.log`에 남는다 → 다른 PC 문제는 이 파일을 받아서 본다.
+- 함정: 상태 클래스 이름 `busy`가 탭의 `.busy`(점 표시, display:none) 규칙과 충돌해 레이아웃이 깨졌음 → 온보딩 상태 클래스는 `is-*`.

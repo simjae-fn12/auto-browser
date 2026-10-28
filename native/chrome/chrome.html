@@ -730,6 +730,47 @@ body.assist #assist .card { opacity: 1; transform: none; }
 
 /* Settings (Ctrl+,) */
 body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transform: scale(1.04); }
+/* Welcome screen (first start, or 설정 → 시작하기) */
+#onboard { position: fixed; inset: 0; z-index: 12; display: flex; align-items: center; justify-content: center; padding: 32px; }
+#onboard[hidden] { display: none; }
+#onboard:not(.in) { pointer-events: none; }
+#onboard .scrim { position: absolute; inset: 0; background: color-mix(in srgb, var(--canvas) 80%, transparent); backdrop-filter: blur(16px) saturate(.9); opacity: 0; transition: opacity 240ms; }
+#onboard.in .scrim { opacity: 1; }
+.ob-panel {
+  position: relative; width: min(640px, 100%); max-height: 100%; overflow: auto; padding: 30px 32px 24px; border-radius: 18px;
+  background: var(--surface); box-shadow: var(--shadow-pop); outline: none;
+  opacity: 0; transform: translateY(10px) scale(.985); transition: opacity 200ms, transform 320ms var(--ease);
+}
+#onboard.in .ob-panel { opacity: 1; transform: none; }
+.ob-head { display: flex; gap: 16px; align-items: center; margin-bottom: 22px; }
+.ob-logo { width: 52px; height: 52px; flex: none; }
+.ob-head h1 { margin: 0 0 4px; font: 650 21px "Segoe UI Variable Display", "Segoe UI", "Malgun Gothic", sans-serif; }
+.ob-head p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.ob-step { display: flex; gap: 14px; padding: 16px 0; border-top: 1px solid var(--line); }
+.ob-num { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--hover); color: var(--ink-2); font-weight: 650; font-size: 12.5px; }
+.ob-step.done .ob-num { background: var(--accent-strong); color: #fff; }
+.ob-body { flex: 1; min-width: 0; }
+.ob-body h2 { margin: 2px 0 3px; font-size: 14.5px; font-weight: 650; }
+.ob-body > p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.ob-row { display: flex; align-items: center; gap: 12px; }
+.ob-row .ob-body { padding-right: 4px; }
+.ob-tools { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.ob-tool { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; background: var(--canvas); }
+.ob-tool .edot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.ob-tool .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ob-tool .info b { font-size: 13px; }
+.ob-tool .state { font-size: 12px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
+.ob-tool.is-ok .state { color: var(--accent-strong); }
+.ob-tool.is-error .state { color: #d14343; }
+.ob-tool .code { font: 650 13px Consolas, "Cascadia Mono", monospace; letter-spacing: 1px; padding: 1px 7px; border-radius: 6px; background: var(--ai-soft); color: var(--ai); }
+.ob-bar { height: 4px; border-radius: 2px; background: var(--hover); overflow: hidden; }
+.ob-bar i { display: block; height: 100%; width: 0; background: var(--accent-strong); transition: width 240ms; }
+.ob-bar.indeterminate i { width: 35%; animation: ob-slide 1.1s ease-in-out infinite; }
+@keyframes ob-slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.ob-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 18px; border-top: 1px solid var(--line); }
+.ob-panel .st-btn { white-space: nowrap; }
+.st-btn.primary { background: var(--accent-strong); color: #fff; border-color: transparent; }
+
 #settings { position: fixed; inset: 0; z-index: 12; display: flex; align-items: center; justify-content: center; padding: 32px; }
 #settings[hidden] { display: none; }
 #settings:not(.in) { pointer-events: none; }
@@ -1007,6 +1048,21 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
   </div>
 </div>
 
+<div id="onboard" hidden>
+  <div class="scrim"></div>
+  <div class="ob-panel" role="dialog" aria-label="Oinzi 시작하기" tabindex="-1">
+    <div class="ob-head"><svg class="ob-logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="obLogoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b7bff"/><stop offset="1" stop-color="#5a3fe0"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#obLogoGrad)"/><circle cx="30" cy="34" r="15" fill="none" stroke="#fff" stroke-width="8"/><path d="M49 8C49.9 13.6 50.4 14.1 56 15 50.4 15.9 49.9 16.4 49 22 48.1 16.4 47.6 15.9 42 15 47.6 14.1 48.1 13.6 49 8Z" fill="#fff"/></svg><div><h1>Oinzi에 오신 걸 환영해요</h1><p>세 가지만 준비하면 바로 쓸 수 있어요. 건너뛰어도 나중에 설정 → 시작하기에서 다시 할 수 있어요.</p></div></div>
+    <div class="ob-step" data-ob-step="ai"><div class="ob-num">1</div><div class="ob-body"><h2>AI 연결</h2><p>Oinzi 안에서 일할 AI예요. 둘 중 하나만 있어도 돼요. 설치와 로그인 모두 이 화면에서 끝나요.</p>
+      <div class="ob-tools">
+        <div class="ob-tool" data-ob-tool="claude"><i class="edot" style="background:var(--claude)"></i><div class="info"><b>Claude Code</b><span class="state"></span><div class="ob-bar" hidden><i></i></div></div><button class="st-btn"></button></div>
+        <div class="ob-tool" data-ob-tool="codex"><i class="edot" style="background:var(--codex)"></i><div class="info"><b>Codex</b><span class="state"></span><div class="ob-bar" hidden><i></i></div></div><button class="st-btn"></button></div>
+      </div></div></div>
+    <div class="ob-step ob-row" data-ob-step="import"><div class="ob-num">2</div><div class="ob-body"><h2>쓰던 브라우저에서 옮기기</h2><p id="obImportText"></p></div><button class="st-btn" id="obImport">가져오기</button></div>
+    <div class="ob-step ob-row" data-ob-step="default"><div class="ob-num">3</div><div class="ob-body"><h2>기본 브라우저</h2><p id="obDefaultText"></p></div><button class="st-btn" id="obDefault">기본 브라우저로 설정</button></div>
+    <div class="ob-foot"><button class="st-btn" id="obLater">나중에 할게요</button><button class="st-btn primary" id="obDone">시작하기</button></div>
+  </div>
+</div>
+
 <div id="settings" hidden>
   <div class="scrim"></div>
   <div class="st-panel" role="dialog" aria-label="설정" tabindex="-1">
@@ -1031,7 +1087,7 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
       <div class="st-body">
 
         <section class="st-sec" data-sec="start">
-          <h3>시작하기</h3>
+          <h3>시작하기 <button class="st-btn" id="setupReopen" style="margin-left:8px;vertical-align:middle">시작 안내 다시 열기</button></h3>
           <p class="lead">AI 도구를 연결하고, 쓰던 브라우저의 프로필을 Oinzi 프로필로 옮겨 오고, 다른 앱에서 누른 링크가 Oinzi에서 열리게 합니다. 프로필 이름과 계정 이메일만 가져옵니다. 로그인 상태(쿠키)는 옮겨 오지 않으니 프로필마다 Oinzi에서 한 번씩 로그인하세요.</p>
           <div class="st-group">
             <h4>AI 연결</h4>
@@ -2652,19 +2708,132 @@ function renderSetup(state) {
     : state.browsers.map(browser => `${browser.label} 프로필 ${browser.count}개`).join(', ')
       + (fresh ? ` 중 ${fresh}개를 새 Oinzi 프로필로 만듭니다.` : ' 모두 가져왔습니다.');
   $('#setupImportBtn').disabled = fresh === 0;
-  const tools = state.tools || {};
-  const purpose = { claude: 'AI 패널에서 Claude로 일합니다. 설치한 뒤 「AI 계정」에서 로그인하세요.', codex: 'AI 패널에서 Codex로 일합니다. Node.js가 없으면 함께 설치합니다.', node: '터미널의 AI(Claude Code·Codex)가 Oinzi를 다룰 때 씁니다(agent.mjs, MCP).' };
-  for (const tool of ['claude', 'codex', 'node']) {
-    $(`[data-tool-state="${tool}"]`).textContent = (tools[tool] ? '설치됨 · ' : '설치되지 않음 · ') + purpose[tool];
-    const button = $(`[data-tool="${tool}"]`);
-    button.textContent = tools[tool] ? (tool === 'node' ? '설치됨' : '로그인') : '설치';
-    button.disabled = tool === 'node' && !!tools[tool];
+  renderSetupTools();
+}
+const ob = { open: false, setup: null, progress: {}, resume: null };
+// One reading of an AI tool for the welcome screen and settings: installing, missing, signing in, signed in, failed.
+function aiToolState(engine) {
+  const progress = ob.progress[engine];
+  if (progress?.state === 'running') return { kind: 'busy', text: progress.text, fraction: progress.fraction ?? null };
+  const installed = !!ob.setup?.tools?.[engine];
+  if (!installed) return progress?.state === 'error'
+    ? { kind: 'error', text: progress.text, action: 'install', label: '다시 시도' }
+    : { kind: 'missing', text: '설치되어 있지 않아요.', action: 'install', label: '설치' };
+  const book = st.accounts?.[engine];
+  const account = book?.items.find(item => item.id === book.active) ?? book?.items.find(item => item.isDefault);
+  if (!account) return { kind: 'login', text: '설치됨 · 로그인이 필요해요.', action: 'login', label: '로그인' };
+  if (account.loggingIn) return { kind: 'busy', html: account.loginCode
+      ? `열린 탭에 코드 <span class="code">${escapeHtml(account.loginCode)}</span>를 넣으세요(클립보드에 복사됨).`
+      : 'Oinzi 탭에서 로그인하는 중이에요.', action: 'login', label: '로그인 탭 보기', id: account.id };
+  if (account.loggedIn) return { kind: 'ok', text: '연결됨' + (account.email ? ` · ${account.email}` : '') + (account.plan ? ` · ${account.plan}` : '') };
+  if (account.loggedIn == null || account.checking) return { kind: 'busy', text: '로그인 상태를 확인하는 중…' };
+  return { kind: account.loginError ? 'error' : 'login', text: account.loginError ? `로그인하지 못했어요: ${account.loginError}` : '설치됨 · 로그인이 필요해요.',
+    action: 'login', label: account.loginError ? '다시 로그인' : '로그인', id: account.id };
+}
+function aiToolAction(engine, state) {
+  if (state.action === 'install') send('setup.install', { tool: engine });
+  else if (state.action === 'login') {
+    const book = st.accounts?.[engine];
+    ob.resume = ob.open ? engine : null;
+    send('acct.login', { engine, id: state.id ?? book?.active ?? 'default' });
   }
 }
+function renderSetupTools() {
+  for (const engine of ['claude', 'codex']) {
+    const state = aiToolState(engine);
+    const label = $(`[data-tool-state="${engine}"]`);
+    if (label) label.innerHTML = state.html ?? escapeHtml(state.text + (state.fraction != null ? ` ${Math.round(state.fraction * 100)}%` : ''));
+    const button = $(`[data-tool="${engine}"]`);
+    if (button) { button.hidden = !state.action; button.textContent = state.label ?? ''; button.disabled = state.kind === 'busy' && state.action !== 'login'; }
+  }
+  const node = !!ob.setup?.tools?.node;
+  const nodeLabel = $('[data-tool-state="node"]');
+  if (nodeLabel) nodeLabel.textContent = (node ? '설치됨 · ' : '설치되지 않음 · ') + '터미널의 AI(Claude Code·Codex)가 Oinzi를 다룰 때만 필요해요(agent.mjs, MCP).';
+  const nodeButton = $('[data-tool="node"]');
+  if (nodeButton) { nodeButton.hidden = node; nodeButton.textContent = 'nodejs.org 열기'; }
+  if (ob.open) renderOnboarding();
+}
 document.querySelectorAll('[data-tool]').forEach(button => button.addEventListener('click', () => {
-  if (button.textContent === '로그인') showSection('accounts');
-  else send('setup.install', { tool: button.dataset.tool });
+  const engine = button.dataset.tool;
+  if (engine === 'node') { closeSettings(); send('open', { url: 'https://nodejs.org/ko/download', newTab: true }); return; }
+  aiToolAction(engine, aiToolState(engine));
 }));
+$('#setupReopen').addEventListener('click', () => send('onboarding.open'));
+
+const onboardEl = $('#onboard');
+function renderOnboarding() {
+  let anyAi = false;
+  for (const engine of ['claude', 'codex']) {
+    const row = onboardEl.querySelector(`[data-ob-tool="${engine}"]`);
+    const state = aiToolState(engine);
+    anyAi ||= state.kind === 'ok';
+    row.className = `ob-tool is-${state.kind}`;
+    row.querySelector('.state').innerHTML = state.html ?? escapeHtml(state.text ?? '');
+    const bar = row.querySelector('.ob-bar');
+    const showBar = state.kind === 'busy' && ob.progress[engine]?.state === 'running';
+    bar.hidden = !showBar;
+    bar.classList.toggle('indeterminate', showBar && state.fraction == null);
+    bar.querySelector('i').style.width = showBar && state.fraction != null ? `${Math.round(state.fraction * 100)}%` : '';
+    const button = row.querySelector('button');
+    button.hidden = !state.action;
+    button.textContent = state.label ?? '';
+  }
+  onboardEl.querySelector('[data-ob-step="ai"]').classList.toggle('done', anyAi);
+  const setup = ob.setup;
+  const fresh = setup ? setup.browsers.reduce((sum, browser) => sum + browser.fresh, 0) : 0;
+  const found = setup ? setup.browsers.reduce((sum, browser) => sum + browser.count, 0) : 0;
+  $('#obImportText').textContent = !setup ? '' : found === 0 ? '이 PC에서 Chrome·Edge 프로필을 찾지 못했어요. 건너뛰어도 돼요.'
+    : fresh === 0 ? '쓰던 프로필을 모두 가져왔어요. 프로필마다 한 번씩만 로그인하면 돼요.'
+    : setup.browsers.map(browser => `${browser.label} 프로필 ${browser.count}개`).join(', ') + ` 중 ${fresh}개를 Oinzi 프로필로 만들어요. 프로필 이름과 계정만 옮기고, 로그인은 프로필마다 한 번씩 다시 해요.`;
+  $('#obImport').hidden = fresh === 0;
+  onboardEl.querySelector('[data-ob-step="import"]').classList.toggle('done', !!setup && found > 0 && fresh === 0);
+  $('#obDefaultText').textContent = setup?.isDefault ? 'Oinzi가 기본 브라우저예요. 다른 앱에서 누른 링크가 Oinzi에서 열려요.'
+    : '다른 앱에서 누른 링크를 Oinzi에서 열어요. Windows가 직접 고르게 해서, 누르면 Windows 설정이 열리고 Oinzi를 고르면 끝나요.';
+  $('#obDefault').hidden = !!setup?.isDefault;
+  onboardEl.querySelector('[data-ob-step="default"]').classList.toggle('done', !!setup?.isDefault);
+}
+function openOnboarding(message) {
+  ob.resume = null;
+  if (ob.open) { renderOnboarding(); return; }
+  const fromOverlay = dismissOverview() || dismissPaletteForSettings() || dismissSettings();
+  ob.open = true;
+  if (message.shot) freeze.src = message.shot;
+  else if (!fromOverlay) freeze.removeAttribute('src');
+  freeze.classList.remove('swap');
+  onboardEl.hidden = false;
+  document.body.classList.add('settings');
+  send('frozen');
+  renderOnboarding();
+  nextFrame(() => onboardEl.classList.add('in'));
+  onboardEl.querySelector('.ob-panel').focus();
+}
+function closeOnboarding() {
+  if (!ob.open) return;
+  ob.open = false;
+  onboardEl.classList.remove('in');
+  document.body.classList.remove('settings');
+  setTimeout(() => {
+    if (ob.open) return;
+    onboardEl.hidden = true;
+    if (st.open || ov.open || pal.open) return;
+    send('thaw');
+    setTimeout(() => { if (!st.open && !ov.open && !pal.open && !ob.open) { freeze.removeAttribute('src'); freeze.classList.remove('swap'); } }, 150);
+  }, 220);
+}
+// A login shows its page in a tab, so the welcome screen steps aside and comes back when the login ends.
+function onAccountsChanged() {
+  if (ob.resume && !st.accounts?.[ob.resume]?.items.some(item => item.loggingIn)) { ob.resume = null; send('onboarding.open'); }
+  renderSetupTools();
+}
+onboardEl.querySelectorAll('[data-ob-tool]').forEach(row => row.querySelector('button').addEventListener('click', () => {
+  const engine = row.dataset.obTool;
+  aiToolAction(engine, aiToolState(engine));
+}));
+$('#obImport').addEventListener('click', () => send('setup.import'));
+$('#obDefault').addEventListener('click', () => send('setup.default'));
+$('#obLater').addEventListener('click', closeOnboarding);
+$('#obDone').addEventListener('click', closeOnboarding);
+onboardEl.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); closeOnboarding(); } });
 $('#setupDefaultBtn').addEventListener('click', () => send('setup.default'));
 $('#setupImportBtn').addEventListener('click', () => send('setup.import'));
 $('#setupProfilesBtn').addEventListener('click', () => showSection('profiles'));
@@ -3647,10 +3816,12 @@ webview?.addEventListener('message', event => {
     $('#aiFollow').checked = !!message.prefs.followAgent;
     if (st.open) applyPrefs();
   }
-  else if (message.type === 'accounts') { st.accounts = message.engines; if (st.open) renderAccounts(); }
+  else if (message.type === 'accounts') { st.accounts = message.engines; if (st.open) renderAccounts(); onAccountsChanged(); }
   else if (message.type === 'acct.error') showNote(message.text, true);
-  else if (message.type === 'settings.close') closeSettings();
-  else if (message.type === 'setup.state') renderSetup(message);
+  else if (message.type === 'settings.close') { if (ob.open) { const resume = ob.resume; closeOnboarding(); ob.resume = resume; } closeSettings(); }
+  else if (message.type === 'setup.state') { ob.setup = message; for (const [tool, p] of Object.entries(message.installing || {})) ob.progress[tool] = { state: 'running', ...p }; renderSetup(message); }
+  else if (message.type === 'setup.progress') { ob.progress[message.tool] = message; renderSetupTools(); }
+  else if (message.type === 'onboarding') openOnboarding(message);
   else if (message.type === 'extensions') { exts.profile = message.profile; exts.items = message.items; renderExtensions(); }
   else if (message.type === 'extensions.busy') { exts.busy = message.busy; renderExtensions(); }
   else if (message.type === 'extensions.settings') { exts.settings = message; renderExtensionSettings(); }
