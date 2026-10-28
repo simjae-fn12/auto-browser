@@ -1031,7 +1031,22 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
 
         <section class="st-sec" data-sec="start">
           <h3>시작하기</h3>
-          <p class="lead">쓰던 브라우저의 프로필을 pluck 프로필로 옮겨 오고, 다른 앱에서 누른 링크가 pluck에서 열리게 합니다. 프로필 이름과 계정 이메일만 가져옵니다. 로그인 상태(쿠키)는 옮겨 오지 않으니 프로필마다 pluck에서 한 번씩 로그인하세요.</p>
+          <p class="lead">AI 도구를 연결하고, 쓰던 브라우저의 프로필을 pluck 프로필로 옮겨 오고, 다른 앱에서 누른 링크가 pluck에서 열리게 합니다. 프로필 이름과 계정 이메일만 가져옵니다. 로그인 상태(쿠키)는 옮겨 오지 않으니 프로필마다 pluck에서 한 번씩 로그인하세요.</p>
+          <div class="st-group">
+            <h4>AI 연결</h4>
+            <div class="st-row" data-kw="claude 클로드 설치 cli ai">
+              <div class="lbl"><b>Claude Code</b><span data-tool-state="claude"></span></div>
+              <div class="st-actions"><button class="st-btn" data-tool="claude"></button></div>
+            </div>
+            <div class="st-row" data-kw="codex 코덱스 설치 cli ai openai">
+              <div class="lbl"><b>Codex</b><span data-tool-state="codex"></span></div>
+              <div class="st-actions"><button class="st-btn" data-tool="codex"></button></div>
+            </div>
+            <div class="st-row" data-kw="node nodejs 노드 터미널 에이전트 mcp">
+              <div class="lbl"><b>Node.js</b><span data-tool-state="node"></span></div>
+              <div class="st-actions"><button class="st-btn" data-tool="node"></button></div>
+            </div>
+          </div>
           <div class="st-group">
             <div class="st-row" data-kw="기본 브라우저 default browser 링크">
               <div class="lbl"><b>기본 브라우저</b><span id="setupDefault"></span></div>
@@ -2636,7 +2651,19 @@ function renderSetup(state) {
     : state.browsers.map(browser => `${browser.label} 프로필 ${browser.count}개`).join(', ')
       + (fresh ? ` 중 ${fresh}개를 새 pluck 프로필로 만듭니다.` : ' 모두 가져왔습니다.');
   $('#setupImportBtn').disabled = fresh === 0;
+  const tools = state.tools || {};
+  const purpose = { claude: 'AI 패널에서 Claude로 일합니다. 설치한 뒤 「AI 계정」에서 로그인하세요.', codex: 'AI 패널에서 Codex로 일합니다. Node.js가 없으면 함께 설치합니다.', node: '터미널의 AI(Claude Code·Codex)가 pluck을 다룰 때 씁니다(agent.mjs, MCP).' };
+  for (const tool of ['claude', 'codex', 'node']) {
+    $(`[data-tool-state="${tool}"]`).textContent = (tools[tool] ? '설치됨 · ' : '설치되지 않음 · ') + purpose[tool];
+    const button = $(`[data-tool="${tool}"]`);
+    button.textContent = tools[tool] ? (tool === 'node' ? '설치됨' : '로그인') : '설치';
+    button.disabled = tool === 'node' && !!tools[tool];
+  }
 }
+document.querySelectorAll('[data-tool]').forEach(button => button.addEventListener('click', () => {
+  if (button.textContent === '로그인') showSection('accounts');
+  else send('setup.install', { tool: button.dataset.tool });
+}));
 $('#setupDefaultBtn').addEventListener('click', () => send('setup.default'));
 $('#setupImportBtn').addEventListener('click', () => send('setup.import'));
 $('#setupProfilesBtn').addEventListener('click', () => showSection('profiles'));

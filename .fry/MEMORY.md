@@ -170,3 +170,9 @@
 - WebView2 기본 내장 확장(Edge PDF Viewer, Clipboard)이 목록에 섞여 나옴 → pluck 저장소에 폴더가 있는 것만 보여 준다.
 - 팝업 창을 Opacity로 숨기면(레이어드 창) WebView가 안 그려짐 → 화면 밖(-32000)에 띄웠다가 크기를 잰 뒤 옮긴다.
 - 팝업은 Chrome의 "현재 탭" 개념이 없어 chrome.tabs로 현재 페이지를 읽는 확장(예: Dark Reader 팝업의 사이트 표시)은 페이지를 모른다. 페이지에 주입되는 content script는 정상 동작.
+
+# 배포: 설치 파일(Inno Setup) · AI 도구 설치 (native/installer, BrowserSetup.cs)
+- `native/installer/build.ps1` → self-contained publish(`publish-installer`) → ISCC → `native/dist/pluck-setup-<ver>.exe`(약 35MB). 버전은 native.csproj `<Version>`. Inno Setup 6 필요(`winget install JRSoftware.InnoSetup`, 사용자 범위 설치면 `%LOCALAPPDATA%\Programs\Inno Setup 6`).
+- 사용자별 설치(관리자 권한 X) `%LOCALAPPDATA%\Programs\pluck`. 데이터는 `%APPDATA%\pluck-windows-native` 그대로라 제거해도 남는다. 제거 마지막에 `pluck.exe --unregister`가 기본 브라우저 등록·시작 프로그램 항목을 지운다(Mutex보다 먼저 처리).
+- 서명 안 된 exe라 SmartScreen "알 수 없는 게시자" 경고가 뜬다 → 없애려면 코드 서명 인증서.
+- 「시작하기」 AI 연결: Claude는 공식 `irm https://claude.ai/install.ps1 | iex`, Codex는 npm(`@openai/codex`, npm 없으면 winget으로 Node LTS 먼저), Node는 winget. 보이는 PowerShell 창에서 실행해 진행·오류를 사람이 보게 한다. 상태는 창이 다시 활성화될 때 재검사.

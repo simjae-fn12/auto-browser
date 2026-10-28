@@ -252,3 +252,7 @@ AI 실행 상태와 선택한 대화를 저장합니다. 실행 도중 앱이 �
 - 좌표 클릭과 번호 표시 스크린샷
 - 대기와 JavaScript 실행
 - MCP 서버 Chrome 프로필 이전, 확장 프로그램 관리, 공식 `pluck-browser` 스킬과의 호환은 아직 구현되지 않았습니다. WebView2는 Edge에 들어 있는 Chromium(Blink·V8) 엔진을 사용합니다. 페이지 렌더링과 JavaScript는 Chrome과 같지만, Chrome 웹 스토어 확장과 Google 계정 동기화는 쓸 수 없습니다.
+
+## 다른 PC에 설치
+
+`native/installer/build.ps1`을 실행하면 `native/dist/pluck-setup-<버전>.exe`가 만들어집니다(Inno Setup 6 필요: `winget install JRSoftware.InnoSetup`). 관리자 권한 없이 사용자 폴더에 설치되고, 시작 메뉴와 제거 항목이 생깁니다. 처음 실행하면 설정의 「시작하기」에서 Claude Code·Codex·Node.js 설치, Chrome·Edge 프로필 가져오기, 기본 브라우저 설정을 할 수 있습니다. AI CLI가 없어도 브라우저 기능은 모두 동작하고, AI 패널만 설치 안내를 보여 줍니다.

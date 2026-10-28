@@ -164,6 +164,19 @@ public sealed partial class BrowserForm
         SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
     }
 
+    internal static void UnregisterBrowser()
+    {
+        try
+        {
+            foreach (var key in new[] { BrowserKey, $@"Software\Classes\{UrlProgId}", $@"Software\Classes\{HtmlProgId}" })
+                Registry.CurrentUser.DeleteSubKeyTree(key, false);
+            using (var registered = Registry.CurrentUser.OpenSubKey(@"Software\RegisteredApplications", true)) registered?.DeleteValue("pluck", false);
+            using (var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)) run?.DeleteValue("pluck", false);
+            SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or System.Security.SecurityException) { }
+    }
+
     // A moved pluck.exe would leave links pointing at a file that no longer exists; a test build elsewhere must not take over.
     private static void RefreshBrowserRegistration()
     {
@@ -192,6 +205,7 @@ public sealed partial class BrowserForm
         PostChrome(new
         {
             type = "setup.state", isDefault = IsDefaultBrowser(),
+            tools = new { claude = FindTool("claude") != null, codex = FindTool("codex") != null, node = FindNode() != null },
             browsers = OtherBrowsers.Select(b => new { label = b.Label, count = found.Count(p => p.Browser == b), fresh = fresh.Count(p => p.Browser == b) })
                 .Where(b => b.count > 0).ToArray()
         });
@@ -203,6 +217,7 @@ public sealed partial class BrowserForm
         {
             case "setup.state": break;
             case "setup.default": MakeDefaultBrowser(); break;
+            case "setup.install": InstallTool(Read(message, "tool")); break;
             case "setup.import":
                 var added = ImportBrowserProfiles();
                 SaveProfiles();
@@ -221,9 +236,39 @@ public sealed partial class BrowserForm
         for (var i = 0; i < 200 && !chromeReady; i++) await Task.Delay(50);
         prefs.SetupOffered = true;
         SavePrefs();
-        if (IsDefaultBrowser() && FindBrowserProfiles().All(p => ImportedFrom(p) != null)) return;
+        if (IsDefaultBrowser() && FindBrowserProfiles().All(p => ImportedFrom(p) != null) && FindTool("claude") != null && FindTool("codex") != null) return;
         await Task.Delay(600);
         await OpenSettingsAsync("start");
+    }
+
+    // Node runs terminal agents (agent.mjs, mcp.mjs) and npm installs Codex.
+    private static string? FindNode() =>
+        (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Append(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs"))
+            .Select(dir => { try { return Path.Combine(dir.Trim().Trim('"'), "node.exe"); } catch (ArgumentException) { return ""; } })
+            .FirstOrDefault(File.Exists);
+
+    // Each tool's official install command, run in a visible PowerShell window so the person sees progress, prompts and
+    // errors. pluck re-checks when its window is active again.
+    private const string NodeInstall = "winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements; "
+        + "$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); ";
+    private static readonly Dictionary<string, (string Name, string Script)> ToolInstallers = new()
+    {
+        ["claude"] = ("Claude Code", "irm https://claude.ai/install.ps1 | iex; "),
+        ["codex"] = ("Codex", "if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { " + NodeInstall + "} npm install -g @openai/codex; "),
+        ["node"] = ("Node.js", NodeInstall)
+    };
+
+    private void InstallTool(string tool)
+    {
+        if (!ToolInstallers.TryGetValue(tool, out var installer)) return;
+        var script = $"$Host.UI.RawUI.WindowTitle = '{installer.Name} 설치'; Write-Host '{installer.Name}을(를) 설치합니다.'; " + installer.Script
+            + "Write-Host ''; Read-Host '끝났습니다. Enter를 누르면 창이 닫힙니다. pluck으로 돌아가면 설치 상태가 바뀝니다'";
+        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false };
+        foreach (var arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script }) start.ArgumentList.Add(arg);
+        try { Process.Start(start); }
+        catch (System.ComponentModel.Win32Exception ex) { PostChrome(new { type = "settings.note", text = "설치 창을 열지 못했습니다: " + ex.Message }); return; }
+        PostChrome(new { type = "settings.note", text = $"{installer.Name} 설치 창을 열었습니다. 끝나면 「AI 계정」에서 로그인하세요." });
     }
 
     internal static string DataDirectory { get; } = Environment.GetEnvironmentVariable("PLUCK_NATIVE_DATA_DIR")

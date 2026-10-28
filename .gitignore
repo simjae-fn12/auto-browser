@@ -10,3 +10,4 @@ native/*.user
 native/native-test.png
 tests/**/bin/
 tests/**/obj/
+native/dist/

@@ -9,6 +9,7 @@
     <AssemblyName>pluck</AssemblyName>
     <Product>pluck</Product>
     <Title>pluck</Title>
+    <Version>0.9.0</Version>
     <ApplicationIcon>pluck.ico</ApplicationIcon>
   </PropertyGroup>
 

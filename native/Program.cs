@@ -5,6 +5,8 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // The uninstaller's last step: take pluck out of the default-browser list and Windows startup.
+        if (args is ["--unregister"]) { BrowserForm.UnregisterBrowser(); return; }
         var links = BrowserForm.LinksFromArgs(args);
         using var instance = new Mutex(true, @"Local\" + BrowserForm.InstanceName, out var first);
         if (!first)
