@@ -9,7 +9,8 @@ import { randomUUID } from 'node:crypto';
 
 const owner = randomUUID();
 const connectionPath = process.env.OINZI_CONNECTION
-  || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Oinzi', 'connection.json');
+  || path.join(process.env.APPDATA || (process.platform === 'win32' ? path.join(os.homedir(), 'AppData', 'Roaming')
+    : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')), 'Oinzi', 'connection.json');
 let sessionId = process.env.OINZI_SESSION || '';
 const sessionLabel = process.env.OINZI_SESSION_LABEL || 'MCP';
 const sessionProfile = process.env.OINZI_PROFILE || '';

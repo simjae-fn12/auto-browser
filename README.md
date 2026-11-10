@@ -1,4 +1,13 @@
-# Oinzi Windows
+# Oinzi
+
+| 플랫폼 | 위치 | 엔진 |
+| --- | --- | --- |
+| Windows | [`native/`](./native/README.md) | WinForms + Microsoft Edge WebView2 |
+| Linux | [`linux/`](./linux/README.md) | Electron (Chromium) |
+
+두 버전은 화면 UI(`native/chrome/chrome.html`), `agent.mjs`, `mcp.mjs`를 함께 씁니다.
+
+## Windows
 
 Windows용 브라우저의 현재 구현은 [`native/`](./native/README.md)에 있습니다. Windows Forms 창과 Microsoft Edge WebView2 엔진을 사용하며 Electron은 필요하지 않습니다. 사람 탭과 에이전트 탭은 같은 영구 프로필을 공유합니다.
 

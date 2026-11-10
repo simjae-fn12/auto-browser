@@ -1,0 +1,13 @@
+{
+  "name": "oinzi-linux",
+  "version": "0.9.1",
+  "private": true,
+  "description": "Oinzi for Linux: the same browser shared by a person and local AI agents, on Electron (Chromium)",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "44.6.0"
+  }
+}

@@ -1,5 +1,5 @@
 // Drives a real Oinzi build: pages must see trusted input events, and snapshots must carry roles, states and diffs.
-// Build first: dotnet build native/native.csproj -c Debug. Runs against a private data folder, not your profile.
+// Build first: dotnet build native/native.csproj -c Debug (Windows) or npm install in linux/ (Linux). Runs against a private data folder, not your profile.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
@@ -10,7 +10,11 @@ import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 
 const root = path.resolve(import.meta.dirname, '..');
-const exe = path.join(root, 'native', 'bin', 'Debug', 'net10.0-windows', 'oinzi.exe');
+// Windows runs the WebView2 build; Linux runs the Electron build in linux/ (npm install there first).
+const linux = process.platform === 'linux';
+const exe = linux ? path.join(root, 'linux', 'node_modules', 'electron', 'dist', 'electron')
+  : path.join(root, 'native', 'bin', 'Debug', 'net10.0-windows', 'oinzi.exe');
+const appArgs = linux ? [path.join(root, 'linux')] : [];
 const fixtures = path.join(root, 'tests', 'fixtures');
 
 async function start(t) {
@@ -22,7 +26,7 @@ async function start(t) {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const data = await fs.mkdtemp(path.join(os.tmpdir(), 'Oinzi-input-'));
-  const app = spawn(exe, [], { env: { ...process.env, OINZI_DATA_DIR: data }, stdio: 'ignore' });
+  const app = spawn(exe, appArgs, { env: { ...process.env, OINZI_DATA_DIR: data }, stdio: 'ignore' });
   const connection = path.join(data, 'connection.json');
   for (let i = 0; i < 60; i++) {
     try { await fs.access(connection); break; } catch { await new Promise(r => setTimeout(r, 500)); }

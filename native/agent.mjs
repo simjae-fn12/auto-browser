@@ -21,10 +21,11 @@ for (let i = 0; i < args.length; i++) {
 }
 
 const connectionPath = process.env.OINZI_CONNECTION
-  || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Oinzi', 'connection.json');
+  || path.join(process.env.APPDATA || (process.platform === 'win32' ? path.join(os.homedir(), 'AppData', 'Roaming')
+    : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')), 'Oinzi', 'connection.json');
 let connection;
 try { connection = JSON.parse(await fs.readFile(connectionPath, 'utf8')); }
-catch { throw new Error('Oinzi Windows Native를 먼저 실행하세요.'); }
+catch { throw new Error('Oinzi를 먼저 실행하세요.'); }
 
 async function call(command, args = {}) {
   const response = await fetch(`http://127.0.0.1:${connection.port}/`, {
