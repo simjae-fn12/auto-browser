@@ -49,7 +49,7 @@ const flag = value => value === true || str(value).toLowerCase() === 'true';
 
 const PREF_DEFAULTS = {
   Startup: 'restore', HomePage: HOME, Search: 'google', Theme: 'system', DownloadDir: null, Autofill: true,
-  AgentOverlay: true, FollowAgent: true, AgentIdleMinutes: 15, AutoMp4: true, AttachTab: true, FollowUp: 'steer',
+  AgentOverlay: true, FollowAgent: true, AgentIdleMinutes: 15, TabSleepMinutes: 30, AutoMp4: true, AttachTab: true, FollowUp: 'steer',
   NotifyDone: true, DoneSound: true, CustomInstructions: '', OnboardingDone: false,
 };
 const prefsFile = path.join(dataDir, 'settings.json');
@@ -117,8 +117,8 @@ const activityScript = fs.readFileSync(shared('assistant/activity.js'), 'utf8');
 const activeTab = () => tabs.get(activeId) ?? null;
 const sessionLabel = space => sessions.get(space)?.label ?? space;
 const inWorkspace = tab => tab.agent || tab.profile === userProfile;
-const tabUrl = tab => (tab.wc.isDestroyed() ? '' : tab.wc.getURL());
-const tabTitle = tab => (tab.wc.isDestroyed() ? '' : tab.wc.getTitle());
+const tabUrl = tab => (tab.sleep ? tab.sleep.url : tab.wc.isDestroyed() ? '' : tab.wc.getURL());
+const tabTitle = tab => (tab.sleep ? tab.sleep.title : tab.wc.isDestroyed() ? '' : tab.wc.getTitle());
 const isWebUrl = url => /^(https?|file):/i.test(url);
 
 function orderedTabs() {
@@ -150,7 +150,7 @@ function chromeState() {
     tabs: orderedTabs().filter(inWorkspace).map(tab => ({
       id: tab.id, space: tab.space, label: tab.agent ? sessionLabel(tab.space) : '', agent: tab.agent,
       title: tabTitle(tab), url: tabUrl(tab), favicon: tab.favicon || '',
-      loading: tab.loading, busy: tab.pending > 0, profile: tab.profile,
+      loading: tab.loading, busy: tab.pending > 0, profile: tab.profile, sleeping: !!tab.sleep,
       sessionProfile: tab.agent ? sessions.get(tab.space)?.profile ?? null : null,
     })),
   };
@@ -172,8 +172,9 @@ function refreshAddress() {
 
 // The active tab's view sits over the hole the chrome page reports. Chromium stops laying out and painting a view
 // that is not in a window (zero viewport, no input acks), so tabs an agent is working in stay in the window too,
-// underneath the opaque chrome page, at the same size. Idle background tabs leave the window to save resources.
-const AGENT_WARM_MS = 90000;
+// underneath the opaque chrome page, at the same size. Once an agent has gone quiet its tabs are hidden and throttled
+// like any background tab, so pages it left open stop painting and running timers at full speed while it thinks.
+const AGENT_WARM_MS = 20000;
 function placeViews() {
   if (!win || win.isDestroyed()) return;
   const { x, y, w, h, r } = viewportBounds;
@@ -196,6 +197,7 @@ function placeViews() {
     else if (layer === 'under') tab.view.setBounds({ x: 0, y: 0, width: bounds.width, height: bounds.height });
     tab.view.setVisible(!!layer);
     tab.layer = layer;
+    if (tab.agent && tab.throttled !== !layer) { tab.throttled = !layer; tab.wc.setBackgroundThrottling(!layer); }
   }
   // A view that changed parents may not repaint on its own; ask for a fresh frame once it has settled.
   for (const tab of moved) setTimeout(() => { if (!tab.wc.isDestroyed()) tab.wc.invalidate(); }, 30);
@@ -209,6 +211,10 @@ async function warm(tab) {
 }
 
 function showTab(tab) {
+  if (tab.sleep) wakeTab(tab);
+  const previous = activeTab();
+  if (previous) previous.lastShown = Date.now();
+  tab.lastShown = Date.now();
   activeId = tab.id;
   followWorkspace();
   placeViews();
@@ -342,7 +348,12 @@ async function clearBrowsingData(kinds) {
       const ses = session.fromPartition(partition);
       if (storages.size) await ses.clearStorageData({ storages: [...storages] });
       if (selected.includes('cache')) await ses.clearCache();
-      if (selected.includes('history')) for (const tab of tabs.values()) if (tab.profile && partitionOf(tab.profile) === partition) tab.wc.navigationHistory.clear();
+      if (selected.includes('history')) {
+        for (const tab of tabs.values()) {
+          if (partitionOf(tab.profile) !== partition) continue;
+          if (tab.sleep) tab.sleep.history = null; else if (!tab.wc.isDestroyed()) tab.wc.navigationHistory.clear();
+        }
+      }
       if (selected.includes('autofill')) await ses.clearStorageData({ storages: ['localstorage'], quotas: [] }).catch(() => {});
     }
     postChrome({ type: 'settings.note', text: '선택한 데이터를 삭제했습니다.' + (selected.includes('cookies') ? ' 사이트에서 로그아웃됐을 수 있습니다.' : '') });
@@ -431,7 +442,7 @@ function switchWorkspace(profile) {
 // ---------- Overview ----------
 
 async function thumbnail(tab) {
-  if (tab.wc.isDestroyed()) return null;
+  if (tab.wc.isDestroyed()) return tab.thumb ?? null;
   if (tab.thumbAt && Date.now() - tab.thumbAt < 1500) return tab.thumb;
   try {
     const data = await Promise.race([input.capture(tab.wc, { format: 'jpeg', quality: 60 }), input.delay(1200).then(() => null)]);
@@ -695,39 +706,100 @@ function configureSession(ses) {
   });
 }
 
-function createTab(url, space, select, options = {}) {
-  const { navigate = true, owner = '', webContents = null } = options;
-  const profile = options.profile ?? (space === 'user' ? userProfile : DEFAULT_PROFILE);
-  const agent = space !== 'user';
-  if (agent && ([...tabs.values()].filter(t => t.agent).length >= 60 || [...tabs.values()].filter(t => t.space === space).length >= 20))
-    throw new Error('Agent tab limit reached (20 per space, 60 total). Close unused tabs first.');
+function makeView(profile, agent, webContents = null) {
   const partition = partitionOf(profile);
   configureSession(session.fromPartition(partition));
   const view = new WebContentsView(webContents ? { webContents } : {
     webPreferences: {
       partition, sandbox: true, contextIsolation: true, nodeIntegration: false,
       preload: path.join(ROOT, 'page-preload.cjs'), nodeIntegrationInSubFrames: true,
-      // Agents work in tabs nobody is looking at; throttled timers would stall them.
+      // Agents work in tabs nobody is looking at; throttled timers would stall them. placeViews throttles them again
+      // once the agent goes quiet.
       backgroundThrottling: !agent,
     },
   });
   view.setBackgroundColor('#ffffff');
-  const wc = view.webContents;
+  return view;
+}
+
+// Stands in for the page of a tab that was restored asleep and has never been opened.
+const NO_PAGE = { isDestroyed: () => true };
+
+function createTab(url, space, select, options = {}) {
+  const { navigate = true, owner = '', webContents = null, asleep = null } = options;
+  const profile = options.profile ?? (space === 'user' ? userProfile : DEFAULT_PROFILE);
+  const agent = space !== 'user';
+  if (agent && ([...tabs.values()].filter(t => t.agent).length >= 60 || [...tabs.values()].filter(t => t.space === space).length >= 20))
+    throw new Error('Agent tab limit reached (20 per space, 60 total). Close unused tabs first.');
+  const view = asleep ? null : makeView(profile, agent, webContents);
+  const wc = view ? view.webContents : NO_PAGE;
   const tab = {
     id: nextId++, space, agent, profile, owner, view, wc, order: nextOrder++, layer: null, parent: null,
-    lastUsed: Date.now(), pending: 0, loading: false, favicon: '', dialogs: [],
+    lastUsed: Date.now(), lastShown: Date.now(), pending: 0, loading: false, favicon: asleep?.favicon ?? '', dialogs: [],
     lastSnapshotKeys: null, lastSnapshotText: 0, lastSnapshotUrl: '', documentSerial: 0, scriptedDocument: -1,
-    thumb: null, thumbAt: 0,
+    thumb: null, thumbAt: 0, sleep: asleep ? { url: normalizeUrl(url), title: asleep.title ?? '', history: null } : null,
+    throttled: false, edited: false,
   };
   tabs.set(tab.id, tab);
-  wireTab(tab);
+  if (view) wireTab(tab);
   if (select) showTab(tab); else { placeViews(); refreshSidebar(); }
-  if (navigate) wc.loadURL(normalizeUrl(url)).catch(() => {});
+  if (navigate && view) wc.loadURL(normalizeUrl(url)).catch(() => {});
   return tab;
 }
 
+// ---------- Sleeping tabs ----------
+// Every open page is a renderer process. Like Chrome's Memory Saver, a tab nobody has looked at (or an agent has
+// not touched) for TabSleepMinutes gives its page back and keeps only its address, title and history; selecting it,
+// or an agent command, loads it again where it was. Tabs restored at startup start asleep, except the active one.
+
+function sleepTab(tab) {
+  if (tab.sleep || tab.wc.isDestroyed() || tab.id === activeId || tab.pending > 0 || tab.layer) return false;
+  const url = tab.wc.getURL();
+  // Pages with sound, or a form the person was typing into, keep running.
+  if (!isWebUrl(url) || tab.edited || tab.wc.isCurrentlyAudible()) return false;
+  const history = tab.wc.navigationHistory;
+  let saved = null;
+  try { saved = { entries: history.getAllEntries(), index: history.getActiveIndex() }; } catch { /* no history API */ }
+  tab.sleep = { url, title: tab.wc.getTitle(), history: saved };
+  tab.parent?.removeChildView(tab.view);
+  tab.parent = null; tab.layer = null; tab.loading = false;
+  tab.wc.close();
+  refreshSidebar();
+  return true;
+}
+
+function wakeTab(tab) {
+  const asleep = tab.sleep;
+  if (!asleep) return;
+  tab.sleep = null;
+  tab.view = makeView(tab.profile, tab.agent);
+  tab.wc = tab.view.webContents;
+  tab.parent = null; tab.layer = null; tab.throttled = false; tab.edited = false;
+  tab.lastSnapshotKeys = null; tab.documentSerial++;
+  wireTab(tab);
+  const fallback = () => { if (!tab.wc.isDestroyed()) tab.wc.loadURL(asleep.url).catch(() => {}); };
+  const entries = asleep.history?.entries;
+  if (entries?.length && asleep.history.index >= 0 && asleep.history.index < entries.length) {
+    try { tab.wc.navigationHistory.restore({ entries, index: asleep.history.index }).catch(fallback); } catch { fallback(); }
+  } else fallback();
+}
+
+function sleepIdleTabs() {
+  const minutes = Number(prefs.TabSleepMinutes);
+  if (!(minutes > 0)) return;
+  const cutoff = Date.now() - minutes * 60000;
+  for (const tab of [...tabs.values()]) {
+    if (tab.sleep) continue;
+    if ((tab.agent ? tab.lastUsed : tab.lastShown) < cutoff) sleepTab(tab);
+  }
+}
+
+const waitLoaded = (wc, ms = 30000) => Promise.race([
+  new Promise(resolve => (wc.isLoading() ? wc.once('did-stop-loading', resolve) : resolve())), input.delay(ms)]);
+
 function wireTab(tab) {
   const { wc } = tab;
+  const current = () => tab.wc === wc && !tab.sleep;
   wc.on('page-title-updated', () => { if (activeTab() === tab) refreshAddress(); else refreshSidebar(); });
   wc.on('did-start-navigation', details => {
     if (!details.isMainFrame || details.isSameDocument) return;
@@ -735,12 +807,12 @@ function wireTab(tab) {
   });
   wc.on('did-start-loading', () => { tab.loading = true; refreshSidebar(); });
   wc.on('did-stop-loading', () => { tab.loading = false; if (activeTab() === tab) refreshAddress(); else refreshSidebar(); });
-  wc.on('did-navigate', () => { tab.favicon = ''; if (activeTab() === tab) refreshAddress(); });
+  wc.on('did-navigate', () => { tab.favicon = ''; tab.edited = false; if (activeTab() === tab) refreshAddress(); });
   wc.on('did-navigate-in-page', () => { if (activeTab() === tab) refreshAddress(); });
   wc.on('page-favicon-updated', (_event, favicons) => { tab.favicon = favicons?.[0] ?? ''; refreshSidebar(); });
-  wc.on('destroyed', () => { if (tabs.has(tab.id)) closeTab(tab, { destroyed: true }); });
+  wc.on('destroyed', () => { if (current() && tabs.has(tab.id)) closeTab(tab, { destroyed: true }); });
   // A page calling window.close() closes its tab.
-  wc.on('close', () => closeTab(tab));
+  wc.on('close', () => { if (current()) closeTab(tab); });
   wc.setWindowOpenHandler(() => {
     // A popup lives in its opener's profile and session so window.opener keeps working.
     if (tab.agent && [...tabs.values()].filter(t => t.space === tab.space).length >= 20) return { action: 'deny' };
@@ -755,6 +827,8 @@ function wireTab(tab) {
   });
   wc.on('before-input-event', (event, keys) => {
     if (keys.type !== 'keyDown') return;
+    // Typing into the page means there may be unsaved input, so the tab is kept awake until it navigates.
+    if (!keys.control && !keys.meta && !keys.alt && (keys.key.length === 1 || keys.key === 'Backspace')) tab.edited = true;
     const key = keyName(keys.code);
     if (!key) return;
     const ctrl = keys.control || keys.meta;
@@ -829,6 +903,7 @@ function closeTab(tab, { destroyed = false } = {}) {
   tabs.delete(tab.id);
   const url = destroyed ? '' : tabUrl(tab);
   if (!tab.agent && /^https?:/.test(url)) closedTabs.push({ url, profile: tab.profile });
+  if (closedTabs.length > 25) closedTabs.splice(0, closedTabs.length - 25);
   if (tab.parent && win && !win.isDestroyed()) { tab.parent.removeChildView(tab.view); tab.parent = null; tab.layer = null; }
   if (!destroyed && !tab.wc.isDestroyed()) tab.wc.close();
   if (tab.agent && ![...tabs.values()].some(other => other.space === tab.space) && !sessions.get(tab.space)?.stopped) sessions.delete(tab.space);
@@ -854,7 +929,7 @@ function cleanupIdleTabs() {
 const tabsFile = path.join(dataDir, 'tabs.json');
 
 function saveTabs() {
-  const saved = orderedTabs().map(tab => ({ url: tabUrl(tab), space: tab.space, active: tab.id === activeId, profile: tab.profile }))
+  const saved = orderedTabs().map(tab => ({ url: tabUrl(tab), title: tabTitle(tab), favicon: tab.favicon || '', space: tab.space, active: tab.id === activeId, profile: tab.profile }))
     .filter(tab => isWebUrl(tab.url));
   const savedSessions = [...sessions.values()].filter(s => saved.some(tab => tab.space === s.id)).sort((a, b) => a.order - b.order)
     .map(s => ({ id: s.id, label: s.label, kind: s.kind, profile: s.profile }));
@@ -865,7 +940,8 @@ function readSaved() {
   const root = readJson(tabsFile, null);
   if (!root) return { tabs: [], sessions: [] };
   const all = (Array.isArray(root) ? root.map(url => ({ url, space: 'user' })) : root.tabs || [])
-    .map(tab => ({ url: str(tab.url), space: str(tab.space) || 'user', active: !!tab.active, profile: str(tab.profile) || DEFAULT_PROFILE }))
+    .map(tab => ({ url: str(tab.url), title: clip(str(tab.title), 200), favicon: /^https?:/.test(str(tab.favicon)) ? str(tab.favicon) : '',
+      space: str(tab.space) || 'user', active: !!tab.active, profile: str(tab.profile) || DEFAULT_PROFILE }))
     .filter(tab => isWebUrl(tab.url) && tab.space.length <= 80);
   const users = all.filter(tab => tab.space === 'user').slice(0, 50);
   const perSpace = new Map();
@@ -1017,10 +1093,7 @@ async function command_(body) {
     if (!profile) throw new Error(`Unknown profile "${wanted}". Profiles: ${profileBook.Items.map(p => p.Name).join(', ')}`);
     const created = createTab(str(body.url), s.id, false, { owner, profile });
     // Answer once the first page has loaded, so the agent's next snapshot does not land mid-navigation.
-    const wc = created.wc;
-    if (str(body.url) && !wc.isDestroyed()) {
-      await Promise.race([new Promise(resolve => wc.isLoading() ? wc.once('did-stop-loading', resolve) : resolve()), input.delay(30000)]);
-    }
+    if (str(body.url) && !created.wc.isDestroyed()) await waitLoaded(created.wc);
     return { id: created.id, profile: profileName(profile) };
   }
   const tab = tabs.get(parseInt(str(body.id), 10));
@@ -1032,6 +1105,7 @@ async function command_(body) {
     closeTab(tab);
     return { ok: true };
   }
+  if (tab.sleep) { wakeTab(tab); await waitLoaded(tab.wc); }
   if (tab.wc.isDestroyed()) throw new Error('Tab is not ready');
   const followed = followAssistant() && s.id === followedSpace();
   tab.lastUsed = Date.now();
@@ -1204,13 +1278,15 @@ async function createWindow() {
   const anyActive = restore.some(t => t.active);
   restore.forEach((t, i) => {
     if (t.space !== 'user') restoreSession(t.space, t.space, 'terminal', t.profile);
-    createTab(t.url, t.space, t.active || (!anyActive && i === 0), { profile: findProfile(t.profile)?.Id ?? DEFAULT_PROFILE });
+    const select = t.active || (!anyActive && i === 0);
+    const lazy = !select && Number(prefs.TabSleepMinutes) > 0;
+    createTab(t.url, t.space, select, { profile: findProfile(t.profile)?.Id ?? DEFAULT_PROFILE, asleep: lazy ? { title: t.title, favicon: t.favicon } : null });
   });
   for (const link of launchLinks(process.argv)) createTab(link, 'user', true);
 
   const server = startServer();
-  const cleanup = setInterval(cleanupIdleTabs, 60000);
-  const cool = setInterval(placeViews, 15000);
+  const cleanup = setInterval(() => { cleanupIdleTabs(); sleepIdleTabs(); }, 60000);
+  const cool = setInterval(placeViews, 5000);
   const autosave = setInterval(saveTabs, 60000);
   win.on('close', () => {
     quitting = true;

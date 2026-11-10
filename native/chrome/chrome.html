@@ -236,6 +236,8 @@ body.collapsed .tab .title, body.collapsed .tab .close, body.collapsed .tab .bus
   opacity: 0; transform: scale(.6); transition: opacity 200ms, transform 300ms var(--ease);
 }
 .tab[data-agent] .fav .spin { border-top-color: var(--ai); }
+/* A sleeping tab gave its page back to save memory; it fades until it is opened again. */
+.tab.sleeping:not(.active) .fav, .tab.sleeping:not(.active) .title { opacity: .5; }
 .tab.loading .fav .spin { opacity: 1; transform: scale(1); animation: spin 700ms linear infinite; }
 .tab.loading .fav img, .tab.loading .fav .letter { opacity: 0; transform: scale(.5); }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1411,6 +1413,8 @@ function updateTab(li, tab) {
   li.classList.toggle('active', tab.id === state.active);
   li.classList.toggle('loading', tab.loading);
   li.classList.toggle('is-busy', tab.busy);
+  li.classList.toggle('sleeping', !!tab.sleeping);
+  if (tab.sleeping) li.title += '\n잠자는 탭: 누르면 다시 불러옵니다';
   li.toggleAttribute('data-agent', tab.agent);
   // Tabs outside the default profile get a ring in their profile's colour.
   const profile = tab.profile && tab.profile !== 'default' ? state.profiles?.find(p => p.id === tab.profile) : null;
