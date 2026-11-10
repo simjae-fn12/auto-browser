@@ -5,9 +5,73 @@
   "description": "Oinzi for Linux: the same browser shared by a person and local AI agents, on Electron (Chromium)",
   "main": "main.cjs",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --linux"
   },
   "devDependencies": {
-    "electron": "44.6.0"
-  }
+    "electron": "44.6.0",
+    "electron-builder": "^26.18.0"
+  },
+  "productName": "Oinzi",
+  "homepage": "https://github.com/simjae-fn12/auto-browser",
+  "author": {
+    "name": "Oinzi",
+    "email": "oinzi@users.noreply.github.com"
+  },
+  "build": {
+    "appId": "app.oinzi.browser",
+    "productName": "Oinzi",
+    "executableName": "oinzi",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "input.cjs",
+      "chrome-preload.cjs",
+      "page-preload.cjs",
+      "cli.mjs",
+      "oinzi.png",
+      "package.json",
+      {
+        "from": "../native",
+        "to": "shared",
+        "filter": [
+          "chrome/**",
+          "assistant/**",
+          "agent.mjs",
+          "mcp.mjs",
+          "skills/**"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        "deb"
+      ],
+      "category": "Network",
+      "icon": "oinzi.png",
+      "synopsis": "사람과 AI 에이전트가 함께 쓰는 브라우저",
+      "mimeTypes": [
+        "text/html",
+        "x-scheme-handler/http",
+        "x-scheme-handler/https"
+      ],
+      "syncDesktopName": true
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ],
+      "packageName": "oinzi",
+      "artifactName": "oinzi_${version}_${arch}.${ext}"
+    }
+  },
+  "desktopName": "oinzi.desktop"
 }

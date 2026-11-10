@@ -1016,6 +1016,11 @@ async function command_(body) {
     const profile = !wanted ? findProfile(s.profile)?.Id ?? DEFAULT_PROFILE : findProfile(wanted)?.Id;
     if (!profile) throw new Error(`Unknown profile "${wanted}". Profiles: ${profileBook.Items.map(p => p.Name).join(', ')}`);
     const created = createTab(str(body.url), s.id, false, { owner, profile });
+    // Answer once the first page has loaded, so the agent's next snapshot does not land mid-navigation.
+    const wc = created.wc;
+    if (str(body.url) && !wc.isDestroyed()) {
+      await Promise.race([new Promise(resolve => wc.isLoading() ? wc.once('did-stop-loading', resolve) : resolve()), input.delay(30000)]);
+    }
     return { id: created.id, profile: profileName(profile) };
   }
   const tab = tabs.get(parseInt(str(body.id), 10));

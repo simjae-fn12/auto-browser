@@ -6,19 +6,24 @@ Windows 버전(`native/`, WinForms + WebView2)과 같은 브라우저의 리눅�
 
 ## 설치와 실행
 
-Node.js 20 이상이 필요합니다.
+설치 파일(.deb)을 만들어 설치하는 방법이 기본입니다. 빌드에는 Node.js 20 이상이 필요하고, 설치한 앱은 Node 없이 단독으로 실행됩니다.
 
 ```bash
-./linux/install.sh      # npm install, Chromium 샌드박스 설정(sudo), ~/.local/bin/oinzi와 앱 메뉴 등록
-oinzi                   # 또는 앱 메뉴에서 Oinzi
+cd linux && npm install && npm run dist          # linux/dist/oinzi_<버전>_amd64.deb
+sudo apt install ./dist/oinzi_*_amd64.deb         # /opt/Oinzi, /usr/bin/oinzi, 앱 메뉴, AppArmor 프로필
+oinzi                                             # 또는 앱 메뉴에서 Oinzi
 ```
 
-설치 없이 개발용으로 띄우려면 `cd linux && npm install && npm start`를 실행합니다. Ubuntu 23.10 이상에서는 처음 한 번 Chromium 샌드박스 도우미에 권한을 줘야 합니다(`install.sh`가 처리).
+패키지는 Ubuntu 24.04 이상에서 Chromium 샌드박스가 동작하도록 AppArmor 프로필(`/etc/apparmor.d/oinzi`)을 함께 설치합니다. 지우려면 `sudo apt remove oinzi`를 실행합니다(설정과 프로필 데이터는 `~/.config/Oinzi`에 남습니다).
+
+개발할 때는 체크아웃에서 바로 띄웁니다. Ubuntu 23.10 이상이면 처음 한 번 샌드박스 도우미에 권한을 줘야 합니다.
 
 ```bash
-sudo chown root:root linux/node_modules/electron/dist/chrome-sandbox
-sudo chmod 4755 linux/node_modules/electron/dist/chrome-sandbox
+cd linux && npm install && npm start
+sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 ```
+
+`install.sh`는 이 과정을 대신하고 체크아웃을 가리키는 `~/.local/bin/oinzi`를 만듭니다. .deb와 함께 쓰면 PATH 순서상 이쪽이 먼저 실행되니 둘 중 하나만 쓰세요.
 
 ## 데이터 위치
 
