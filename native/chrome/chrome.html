@@ -2482,7 +2482,7 @@ function renderProfiles() {
   // Updates arrive while the person types in these forms; rebuilding would drop the text.
   if (root.contains(document.activeElement) && document.activeElement.matches('input')) { prof.dirty = true; return; }
   prof.dirty = false;
-  root.innerHTML = prof.items.map(p => {
+  root.innerHTML = prof.items.map((p, index) => {
     const logins = p.logins.map(login => prof.editing === login.id ? loginForm(p.id, login)
       : `<div class="login" data-login="${escapeHtml(login.id)}"><span class="site" title="${escapeHtml(login.site)}">${escapeHtml(login.site)}</span>`
         + `<span class="user"><b>${escapeHtml(login.username || '(아이디 없음)')}</b>${login.note ? `<span>${escapeHtml(login.note)}</span>` : ''}</span>`
@@ -2493,6 +2493,8 @@ function renderProfiles() {
       + `<input class="pname" value="${escapeHtml(p.name)}" maxlength="40" aria-label="프로필 이름">`
       + `<span class="colors">${PROFILE_COLORS.map(c => `<button data-color="${c}" style="--c:${c}" class="${c === p.color ? 'on' : ''}" aria-label="색 ${c}"></button>`).join('')}</span>`
       + `<span class="meta">${p.tabs ? `탭 ${p.tabs}개` : ''}</span>`
+      + `<button class="st-btn" data-op="moveUp" title="프로필 위로 이동" aria-label="프로필 위로 이동"${index === 0 ? ' disabled' : ''}>↑</button>`
+      + `<button class="st-btn" data-op="moveDown" title="프로필 아래로 이동" aria-label="프로필 아래로 이동"${index === prof.items.length - 1 ? ' disabled' : ''}>↓</button>`
       + `<button class="st-btn" data-op="newTab">새 탭</button>`
       + (p.isDefault ? '' : `<button class="st-btn danger" data-op="remove">삭제</button>`) + `</div>`
       + `<input class="pnote" value="${escapeHtml(p.note)}" maxlength="300" placeholder="AI가 참고할 설명 (예: fn12 회사 계정. 네이버 블로그·스마트스토어 운영)">`
@@ -2522,6 +2524,8 @@ $('#stProfiles').addEventListener('click', event => {
   if (!button) return;
   const loginId = event.target.closest('[data-login]')?.dataset.login;
   switch (button.dataset.op) {
+    case 'moveUp': send('prof.move', { id, direction: 'up' }); break;
+    case 'moveDown': send('prof.move', { id, direction: 'down' }); break;
     case 'newTab': send('prof.newTab', { id }); break;
     case 'remove': arm(button, 'prof/' + id, () => send('prof.remove', { id })); break;
     case 'addLogin': prof.editing = 'new:' + id; renderProfiles(); break;

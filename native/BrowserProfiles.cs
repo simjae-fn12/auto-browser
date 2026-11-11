@@ -195,6 +195,15 @@ public sealed partial class BrowserForm
                 };
                 profileBook.Items.Add(added);
                 break;
+            case "prof.move" when FindProfile(id) is { } moved:
+                var direction = Read(message, "direction");
+                if (direction is not ("up" or "down")) return;
+                var from = profileBook.Items.IndexOf(moved);
+                var to = from + (direction == "up" ? -1 : 1);
+                if (to < 0 || to >= profileBook.Items.Count) return;
+                profileBook.Items.RemoveAt(from);
+                profileBook.Items.Insert(to, moved);
+                break;
             case "prof.update" when FindProfile(id) is { } edited:
                 if (Field("name", 40) is { Length: > 0 } newName) edited.Name = newName;
                 if (message.TryGetProperty("note", out _)) edited.Note = Field("note", 300);

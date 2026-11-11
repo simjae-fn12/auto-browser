@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0",
+  "change_id": "20261111-235832-allow-profile-ordering-in-settings",
+  "created_at": "2026-11-11T23:58:32+09:00",
+  "repository": "auto-browser",
+  "branch": "main",
+  "baseline_commit": "adea5dce7d76ba8300fc16575e64c04218ed6ff7",
+  "request": "Add profile order controls",
+  "title": "Allow profile ordering in settings",
+  "purpose": "Persist user selected profile list order",
+  "files": [
+    {
+      "path": "native/BrowserProfiles.cs",
+      "change_type": "modified",
+      "previous_path": null,
+      "line_ranges": [
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 198,
+          "new_end": 206
+        }
+      ],
+      "working_tree_sha256": "31baa153b178870fde81180891ae37e44ec670efed5f04a42985f65fdd584230",
+      "symbols": [
+        "HandleProfileMessage"
+      ],
+      "purpose": "Persist adjacent profile moves safely.",
+      "previous_behavior": "Profiles were displayed in stored insertion order without reorder controls.",
+      "new_behavior": "Valid up/down moves reorder existing profile objects, save profiles.json and refresh consumers; invalid moves are ignored.",
+      "data_impact": "Reorders Items in existing profiles.json on user action; no schema or credential changes.",
+      "access_control_impact": "none: existing trusted chrome message routing and profile permissions remain unchanged.",
+      "risks": [
+        "SaveProfiles retains its existing silent IO failure behavior."
+      ],
+      "rollback": "Revert this commit and rebuild; existing profiles.json remains compatible and preserves its last saved order."
+    },
+    {
+      "path": "native/chrome/chrome.html",
+      "change_type": "modified",
+      "previous_path": null,
+      "line_ranges": [
+        {
+          "old_start": 2485,
+          "old_end": 2485,
+          "new_start": 2485,
+          "new_end": 2485
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 2496,
+          "new_end": 2497
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 2527,
+          "new_end": 2528
+        }
+      ],
+      "working_tree_sha256": "e50621e18c5d0f29432c5b914d2277f15a1d43e23ee61dfa39ba76ddf13606ad",
+      "symbols": [
+        "renderProfiles",
+        "stProfiles click handler"
+      ],
+      "purpose": "Expose profile ordering controls in settings.",
+      "previous_behavior": "Profiles were displayed in stored insertion order without reorder controls.",
+      "new_behavior": "Each profile has accessible up/down buttons; boundary buttons are disabled and clicks send prof.move.",
+      "data_impact": "Sends profile id and direction only; no credential writes.",
+      "access_control_impact": "none: existing trusted chrome message routing and profile permissions remain unchanged.",
+      "risks": [
+        "Additional buttons increase profile header width on narrow settings panels."
+      ],
+      "rollback": "Revert this commit and rebuild; existing profiles.json remains compatible and preserves its last saved order."
+    }
+  ],
+  "production_safety": {
+    "operational_data": "No operational profile or credential data read or changed during development.",
+    "schema_migration": "none: existing list order is used without new fields.",
+    "external_side_effects": [
+      "Local build artifact in native/publish-profile-order; running application unchanged."
+    ]
+  },
+  "verification": [
+    {
+      "command": "dotnet build native/native.csproj -c Release --no-restore",
+      "result": "passed",
+      "evidence": "Zero errors; existing MSB3277 WindowsBase dependency warning."
+    },
+    {
+      "command": "dotnet publish native/native.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o native/publish-profile-order -v quiet",
+      "result": "passed",
+      "evidence": "Standalone Windows executable created."
+    },
+    {
+      "command": "node --check --input-type=commonjs (all embedded chrome.html scripts via UTF-8 stdin)",
+      "result": "passed",
+      "evidence": "All embedded scripts parsed successfully."
+    }
+  ],
+  "residual_risks": [
+    "Live interaction and restart persistence not exercised against user data; running app still uses previous executable.",
+    "Existing silent save failure behavior remains."
+  ],
+  "commit": "same-as-metadata-file"
+}
