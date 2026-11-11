@@ -1,0 +1,100 @@
+{
+  "schema_version": "1.0",
+  "change_id": "20261112-005727-separate-settings-into-individual-pages",
+  "created_at": "2026-11-12T00:57:27+09:00",
+  "repository": "auto-browser",
+  "branch": "main",
+  "baseline_commit": "3213d6eef5d5eae61fde9c6f0859592c9140c621",
+  "request": "Replace continuous settings scroll with separate pages",
+  "title": "Separate settings into individual pages",
+  "purpose": "Display only the selected settings category",
+  "files": [
+    {
+      "path": "native/chrome/chrome.html",
+      "change_type": "modified",
+      "previous_path": null,
+      "line_ranges": [
+        {
+          "old_start": 2241,
+          "old_end": 2242,
+          "new_start": 2241,
+          "new_end": 2242
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 2244,
+          "new_end": 2244
+        },
+        {
+          "old_start": 2245,
+          "old_end": 2246,
+          "new_start": 2246,
+          "new_end": 2248
+        },
+        {
+          "old_start": 2251,
+          "old_end": 2258,
+          "new_start": null,
+          "new_end": null
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 2258,
+          "new_end": 2258
+        },
+        {
+          "old_start": 2273,
+          "old_end": 2273,
+          "new_start": 2268,
+          "new_end": 2268
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 2271,
+          "new_end": 2273
+        }
+      ],
+      "working_tree_sha256": "a5c934d42842fba9d32425bdda3ee2862ae08bce20d053d5cdf9747321d26733",
+      "symbols": [
+        "showSection",
+        "markSection",
+        "filterSettings"
+      ],
+      "purpose": "Make each settings category an isolated page.",
+      "previous_behavior": "All settings sections shared one continuous scroller; scrolling changed the highlighted category.",
+      "new_behavior": "Only the selected section is visible. Category clicks commit text, clear search and reset scroll. Search filters categories while showing a single matching page; scrolling cannot change category.",
+      "data_impact": "none: UI visibility changes only; existing settings persistence is unchanged.",
+      "access_control_impact": "none: no authentication or permission changes.",
+      "risks": [
+        "Search automatically switches to the first matching page when the current page does not match."
+      ],
+      "rollback": "Revert this commit and rebuild; all saved settings remain compatible."
+    }
+  ],
+  "production_safety": {
+    "operational_data": "No operational settings or profile data read or modified; automated browser tests used synthetic data.",
+    "schema_migration": "none: no schema change.",
+    "external_side_effects": [
+      "Local build in native/publish-settings-pages; desktop shortcut updated to this build; running Oinzi unchanged."
+    ]
+  },
+  "verification": [
+    {
+      "command": "node C:/Users/SIMJAE/AppData/Local/Temp/oinzi-settings-pages-test.mjs",
+      "result": "passed",
+      "evidence": "All 12 settings categories show exactly one page, scrolling preserves selection, search remains single-page and category clicks clear search. Compact header and drag regression checks also passed without page errors."
+    },
+    {
+      "command": "dotnet publish native/native.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o native/publish-settings-pages -p:NoWarn=MSB3277 -v quiet",
+      "result": "passed",
+      "evidence": "Standalone updated executable generated."
+    }
+  ],
+  "residual_risks": [
+    "Live user settings data was not used in tests; each category resets its scroll position when selected."
+  ],
+  "commit": "same-as-metadata-file"
+}

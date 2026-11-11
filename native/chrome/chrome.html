@@ -2238,29 +2238,24 @@ function closeSettings() {
   }, 220);
 }
 
-function showSection(sec, smooth = true) {
-  const target = stBody.querySelector(`.st-sec[data-sec="${sec}"]`);
+function showSection(sec) {
+  const target = [...stBody.querySelectorAll('.st-sec')].find(page => page.dataset.sec === sec);
   if (!target) return;
+  commitText();
   st.sec = sec;
-  markSection();
-  stBody.scrollTo({ top: target.offsetTop - stBody.offsetTop - 4, behavior: smooth ? 'smooth' : 'instant' });
+  stQuery.value = '';
+  filterSettings();
+  stBody.scrollTo({ top: 0, behavior: 'instant' });
 }
 function markSection() {
   settingsEl.querySelectorAll('.st-nav .sec').forEach(button => button.classList.toggle('on', button.dataset.sec === st.sec));
 }
-stBody.addEventListener('scroll', () => {
-  // The section whose heading last passed the top of the scroller is the current one.
-  const top = stBody.scrollTop + 40;
-  let current = null;
-  for (const sec of stBody.querySelectorAll('.st-sec:not([hidden])')) if (sec.offsetTop - stBody.offsetTop <= top) current = sec.dataset.sec;
-  if (stBody.scrollTop + stBody.clientHeight >= stBody.scrollHeight - 2) current = [...stBody.querySelectorAll('.st-sec:not([hidden])')].at(-1)?.dataset.sec ?? current;
-  if (current && current !== st.sec) { st.sec = current; markSection(); }
-}, { passive: true });
 settingsEl.querySelectorAll('.st-nav .sec').forEach(button => button.addEventListener('click', () => showSection(button.dataset.sec)));
 
 function filterSettings() {
   const words = stQuery.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const matches = text => words.every(word => text.includes(word));
+  const matchingPages = [];
   for (const sec of stBody.querySelectorAll('.st-sec')) {
     const head = (sec.querySelector('h3')?.textContent + ' ' + (sec.querySelector('.lead')?.textContent ?? '')).toLowerCase();
     const whole = !words.length || matches(head);
@@ -2270,9 +2265,12 @@ function filterSettings() {
       row.hidden = !hit;
       any ||= hit;
     }
-    sec.hidden = !any;
+    if (any) matchingPages.push(sec.dataset.sec);
     settingsEl.querySelector(`.st-nav .sec[data-sec="${sec.dataset.sec}"]`).classList.toggle('dim', !any);
   }
+  if (words.length && matchingPages.length && !matchingPages.includes(st.sec)) st.sec = matchingPages[0];
+  for (const page of stBody.querySelectorAll('.st-sec')) page.hidden = page.dataset.sec !== st.sec;
+  markSection();
 }
 stQuery.addEventListener('input', () => { filterSettings(); stBody.scrollTop = 0; });
 
