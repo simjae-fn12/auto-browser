@@ -204,6 +204,14 @@ public sealed partial class BrowserForm
                 profileBook.Items.RemoveAt(from);
                 profileBook.Items.Insert(to, moved);
                 break;
+            case "prof.place" when FindProfile(id) is { } placed:
+                var targetId = Read(message, "target");
+                var position = Read(message, "position");
+                var destination = profileBook.Items.FirstOrDefault(p => p.Id == targetId);
+                if (destination == null || destination == placed || position is not ("before" or "after")) return;
+                profileBook.Items.Remove(placed);
+                profileBook.Items.Insert(profileBook.Items.IndexOf(destination) + (position == "after" ? 1 : 0), placed);
+                break;
             case "prof.update" when FindProfile(id) is { } edited:
                 if (Field("name", 40) is { Length: > 0 } newName) edited.Name = newName;
                 if (message.TryGetProperty("note", out _)) edited.Note = Field("note", 300);

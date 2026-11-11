@@ -274,6 +274,10 @@ body.collapsed .tab .title, body.collapsed .tab .close, body.collapsed .tab .bus
 .tab.has-prof .fav { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--prof); border-radius: 5px; }
 body.collapsed #profileBtn span { display:none; }
 .st-prof .acct-head { gap: 10px; }
+.profile-grip { cursor: grab; font-size: 20px; padding: 4px; color: var(--muted); user-select: none; }
+.st-prof.profile-dragging { opacity: .45; }
+.st-prof.drop-before { box-shadow: 0 -3px 0 var(--accent-strong); }
+.st-prof.drop-after { box-shadow: 0 3px 0 var(--accent-strong); }
 .st-prof .acct-head input.pname { flex: 1; min-width: 0; height: 30px; padding: 0 8px; font: 600 13.5px inherit; font-family: inherit; color: var(--ink); background: transparent; border: 1px solid transparent; border-radius: 7px; outline: none; }
 .st-prof .acct-head input.pname:hover { border-color: var(--line); }
 .st-prof .acct-head input.pname:focus { border-color: var(--accent-strong); background: var(--surface); }
@@ -896,6 +900,20 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
   #aiLive .label { background: none; color: var(--ink-2); }
 }
+
+body { display: flex; flex-direction: column; }
+#app { flex: 1; min-height: 0; height: auto; }
+#windowbar { display: flex; align-items: center; height: 44px; flex: none; gap: 8px; }
+#windowbar .top { height: 44px; padding: 0 6px; gap: 4px; }
+#windowbar .nav { flex: none; opacity: 1; pointer-events: auto; }
+#windowbar #urlbar { flex: 1; max-width: 760px; min-width: 120px; height: 32px; margin: 0; }
+#windowbar #urlbar .text { opacity: 1; }
+#window-drag { flex: 1; align-self: stretch; min-width: 40px; }
+.window-controls { display: flex; height: 44px; flex: none; }
+.window-controls button { width: 44px; font-size: 15px; border-radius: 4px; }
+.window-controls button:hover { background: var(--hover); }
+.window-controls #winClose:hover { background: #c42b1c; color: white; }
+.profile-grip { -webkit-user-drag: element; }
 </style>
 </head>
 <body>
@@ -928,9 +946,7 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
   <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></symbol>
 </svg>
 
-<div id="app">
-  <aside id="sidebar">
-    <div class="top">
+<header id="windowbar">    <div class="top">
       <button class="icon-btn" id="toggle" title="사이드바 접기 / 펼치기 (Ctrl+Shift+S)"><svg><use href="#i-sidebar"/></svg></button>
       <div class="nav">
         <button class="icon-btn" id="back" title="뒤로 (Alt+←)"><svg><use href="#i-back"/></svg></button>
@@ -944,6 +960,9 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
       <span class="ico"><svg><use href="#i-search"/></svg></span>
       <span class="text fade"><span class="placeholder">검색어 또는 주소 입력</span></span>
     </button>
+<div id="window-drag" title="Oinzi"></div><div class="window-controls"><button id="winMin" aria-label="최소화" title="최소화">&#x2500;</button><button id="winMax" aria-label="최대화 / 이전 크기" title="최대화 / 이전 크기">&#x25a1;</button><button id="winClose" aria-label="닫기" title="닫기">&#x2715;</button></div></header>
+<div id="app">
+  <aside id="sidebar">
     <div id="exts" hidden></div>
     <button id="newtab" title="새 탭 (Ctrl+T)">
       <svg><use href="#i-plus"/></svg><span class="fade">새 탭</span><kbd class="fade">Ctrl T</kbd>
@@ -2477,8 +2496,10 @@ $('#profileBtn').addEventListener('click', event => {
   ], { sidebar: true });
 });
 
+let profileDrag = null;
 function renderProfiles() {
   const root = $('#stProfiles');
+  if (profileDrag) { prof.dirty = true; return; }
   // Updates arrive while the person types in these forms; rebuilding would drop the text.
   if (root.contains(document.activeElement) && document.activeElement.matches('input')) { prof.dirty = true; return; }
   prof.dirty = false;
@@ -2489,7 +2510,7 @@ function renderProfiles() {
         + `<span class="pw${login.hasPassword ? '' : ' none'}">${login.hasPassword ? '••••••••' : '비밀번호 없음'}</span>`
         + `<span class="lops"><button data-op="edit">수정</button><button data-op="del" class="danger">삭제</button></span></div>`).join('');
     return `<div class="st-group st-prof" data-profile="${escapeHtml(p.id)}">`
-      + `<div class="acct-head"><i class="pdot" style="--pc:${escapeHtml(p.color)}"></i>`
+      + `<div class="acct-head"><span class="profile-grip" draggable="true" title="드래그해서 순서 변경" aria-label="드래그해서 순서 변경">⠿</span><i class="pdot" style="--pc:${escapeHtml(p.color)}"></i>`
       + `<input class="pname" value="${escapeHtml(p.name)}" maxlength="40" aria-label="프로필 이름">`
       + `<span class="colors">${PROFILE_COLORS.map(c => `<button data-color="${c}" style="--c:${c}" class="${c === p.color ? 'on' : ''}" aria-label="색 ${c}"></button>`).join('')}</span>`
       + `<span class="meta">${p.tabs ? `탭 ${p.tabs}개` : ''}</span>`
@@ -2514,6 +2535,62 @@ function loginForm(profile, login = null) {
     + `<input name="note" placeholder="메모 (예: 블로그용)" value="${escapeHtml(login?.note ?? '')}">`
     + `<button class="st-btn primary" data-op="save">저장</button><button class="st-btn" data-op="cancel">취소</button></div>`;
 }
+function clearProfileDrop() {
+  $('#stProfiles').querySelectorAll('.drop-before, .drop-after').forEach(el => el.classList.remove('drop-before', 'drop-after'));
+}
+function endProfileDrag() {
+  if (!profileDrag) return;
+  cancelAnimationFrame(profileDrag.frame);
+  profileDrag = null;
+  clearProfileDrop();
+  $('#stProfiles').querySelectorAll('.profile-dragging').forEach(el => el.classList.remove('profile-dragging'));
+  if (prof.dirty) renderProfiles();
+}
+function trackProfileDrop(y) {
+  clearProfileDrop();
+  const cards = [...$('#stProfiles').querySelectorAll('[data-profile]')].filter(el => el.dataset.profile !== profileDrag.id);
+  const target = cards.find(el => y < el.getBoundingClientRect().bottom) || cards.at(-1);
+  if (!target) return;
+  const rect = target.getBoundingClientRect();
+  const position = y < rect.top + rect.height / 2 ? 'before' : 'after';
+  profileDrag.target = target.dataset.profile;
+  profileDrag.position = position;
+  target.classList.add('drop-' + position);
+}
+$('#stProfiles').addEventListener('dragstart', event => {
+  if (!event.target.closest('.profile-grip')) { event.preventDefault(); return; }
+  const card = event.target.closest('[data-profile]');
+  profileDrag = { id: card.dataset.profile, y: event.clientY, frame: 0 };
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', profileDrag.id);
+  event.dataTransfer.setDragImage(card, 20, 20);
+  card.classList.add('profile-dragging');
+  function scroll() {
+    if (!profileDrag) return;
+    const rect = stBody.getBoundingClientRect(), y = profileDrag.y;
+    const speed = y < rect.top + 60 ? -12 : y > rect.bottom - 60 ? 12 : 0;
+    if (speed) { stBody.scrollTop += speed; trackProfileDrop(y); }
+    profileDrag.frame = requestAnimationFrame(scroll);
+  }
+  profileDrag.frame = requestAnimationFrame(scroll);
+});
+stBody.addEventListener('dragover', event => {
+  if (!profileDrag) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  profileDrag.y = event.clientY;
+  trackProfileDrop(event.clientY);
+});
+stBody.addEventListener('drop', event => {
+  if (!profileDrag) return;
+  event.preventDefault();
+  trackProfileDrop(event.clientY);
+  const { id, target, position } = profileDrag;
+  endProfileDrag();
+  if (target) send('prof.place', { id, target, position });
+});
+document.addEventListener('dragend', endProfileDrag);
+document.addEventListener('keydown', event => { if (event.key === 'Escape') endProfileDrag(); });
 $('#stProfiles').addEventListener('click', event => {
   const group = event.target.closest('[data-profile]');
   if (!group) return;
@@ -3700,6 +3777,15 @@ $('#newtab').addEventListener('click', () => send('palette', { mode: 'new' }));
 $('#tabSearch').addEventListener('click', () => send('palette', { mode: 'tabs' }));
 tabsEl.addEventListener('scroll', () => { lastIndicator = ''; placeIndicator(); });
 
+$('#winMin').addEventListener('click', () => send('window.minimize'));
+$('#winMax').addEventListener('click', () => send('window.maximize'));
+$('#winClose').addEventListener('click', () => send('window.close'));
+$('#windowbar').addEventListener('mousedown', event => {
+  if (event.button === 0 && !event.target.closest('button, input, a')) send('window.drag');
+});
+$('#windowbar').addEventListener('dblclick', event => {
+  if (!event.target.closest('button, input, a')) send('window.maximize');
+});
 const viewport = $('#viewport');
 let lastLayout = '';
 function reportLayout() {

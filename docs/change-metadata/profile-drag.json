@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0",
+  "change_id": "20261112-005122-compact-window-toolbar-and-draggable-profiles",
+  "created_at": "2026-11-12T00:51:22+09:00",
+  "repository": "auto-browser",
+  "branch": "main",
+  "baseline_commit": "bf3921139219d26cc6f299ecc94fb17998c1c372",
+  "request": "Drag profile ordering and put function buttons in the titlebar",
+  "title": "Compact window toolbar and draggable profiles",
+  "purpose": "Use titlebar space for navigation and drag profiles across long lists",
+  "files": [
+    {
+      "path": "native/BrowserChrome.cs",
+      "change_type": "modified",
+      "previous_path": null,
+      "line_ranges": [
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 27,
+          "new_end": 30
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 115,
+          "new_end": 121
+        },
+        {
+          "old_start": 305,
+          "old_end": 305,
+          "new_start": 316,
+          "new_end": 316
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 353,
+          "new_end": 379
+        }
+      ],
+      "working_tree_sha256": "10e06a53cf2090846eb2b0711450848c1be148123a26208c5cd722e718fb37ae",
+      "symbols": [
+        "BuildChrome",
+        "HandleChromeMessage",
+        "PlaceViewport",
+        "ToggleWindowMaximize",
+        "WndProc"
+      ],
+      "purpose": "Use titlebar space for navigation and drag profiles across long lists",
+      "previous_behavior": "Native caption occupied a separate row above navigation.",
+      "new_behavior": "Borderless window exposes drag/minimize/maximize/close commands, resize edge hit testing, working-area maximize bounds and viewport coordinates accounting for chrome padding.",
+      "data_impact": "none: changes window layout and interaction only.",
+      "access_control_impact": "none: trusted chrome messages retain existing profile isolation and permissions.",
+      "risks": [
+        "Native snap-layout hover UI is not supplied by custom HTML maximize button; live multi-monitor DPI behavior remains untested."
+      ],
+      "rollback": "Revert this commit and rebuild Oinzi; redirect the desktop shortcut to the previous executable. Saved profile order remains compatible."
+    },
+    {
+      "path": "native/BrowserProfiles.cs",
+      "change_type": "modified",
+      "previous_path": null,
+      "line_ranges": [
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 207,
+          "new_end": 214
+        }
+      ],
+      "working_tree_sha256": "d7375ddcd3110d15ab12374808d1c3f109c7c895ac6a8cf7f6d6ca46c74e98d0",
+      "symbols": [
+        "HandleProfileMessage"
+      ],
+      "purpose": "Use titlebar space for navigation and drag profiles across long lists",
+      "previous_behavior": "Profile order could only move one position per button click.",
+      "new_behavior": "Validated prof.place message places an existing profile before or after another and saves the list using existing persistence.",
+      "data_impact": "Writes existing profiles.json list order on explicit user drop; no schema or credential changes.",
+      "access_control_impact": "none: trusted chrome messages retain existing profile isolation and permissions.",
+      "risks": [
+        "Existing save errors are handled silently by SaveProfiles."
+      ],
+      "rollback": "Revert this commit and rebuild Oinzi; redirect the desktop shortcut to the previous executable. Saved profile order remains compatible."
+    },
+    {
+      "path": "native/chrome/chrome.html",
+      "change_type": "modified",
+      "previous_path": null,
+      "line_ranges": [
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 277,
+          "new_end": 280
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 903,
+          "new_end": 916
+        },
+        {
+          "old_start": 931,
+          "old_end": 933,
+          "new_start": 949,
+          "new_end": 949
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 963,
+          "new_end": 965
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 2499,
+          "new_end": 2499
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 2502,
+          "new_end": 2502
+        },
+        {
+          "old_start": 2492,
+          "old_end": 2492,
+          "new_start": 2513,
+          "new_end": 2513
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 2538,
+          "new_end": 2593
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 3780,
+          "new_end": 3788
+        }
+      ],
+      "working_tree_sha256": "cfaf9f4b04be4f744b345aae168534c50316c4ce08b0ac3a1f4fbb909acb8c4b",
+      "symbols": [
+        "renderProfiles",
+        "trackProfileDrop",
+        "endProfileDrag",
+        "windowbar",
+        "window control handlers"
+      ],
+      "purpose": "Use titlebar space for navigation and drag profiles across long lists",
+      "previous_behavior": "Profiles had arrow controls and navigation sat below an otherwise empty native titlebar.",
+      "new_behavior": "Profile grip supports multi-position drag, insertion marker and automatic edge scrolling; rendering pauses during drag. Existing navigation and URL controls share a compact header with window buttons.",
+      "data_impact": "Sends profile IDs and placement intent only; no credential data changes.",
+      "access_control_impact": "none: trusted chrome messages retain existing profile isolation and permissions.",
+      "risks": [
+        "Native drag feedback and accessibility of direct manipulation vary by device; arrow buttons remain available."
+      ],
+      "rollback": "Revert this commit and rebuild Oinzi; redirect the desktop shortcut to the previous executable. Saved profile order remains compatible."
+    }
+  ],
+  "production_safety": {
+    "operational_data": "No operational profiles or credentials were inspected or changed during development; tests used synthetic profile data.",
+    "schema_migration": "none: existing profile list format retained.",
+    "external_side_effects": [
+      "Local build under native/publish-compact; desktop shortcut points to this build. Active application is left running unchanged."
+    ]
+  },
+  "verification": [
+    {
+      "command": "node C:/Users/SIMJAE/AppData/Local/Temp/oinzi-compact-test.mjs",
+      "result": "passed",
+      "evidence": "Headless Playwright: no page errors, header fits widths 780 and 1380, minimize command routes, p0 drops after p3 and drag state clears."
+    },
+    {
+      "command": "dotnet run --project tests/native-cleanup/native-cleanup.csproj -c Release --no-restore -p:NoWarn=MSB3277 -p:OutputPath=bin/compact-verified/",
+      "result": "passed",
+      "evidence": "All 21 native assertions passed, including PLUCK workspace preservation."
+    },
+    {
+      "command": "dotnet publish native/native.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o native/publish-compact -p:NoWarn=MSB3277 -v quiet",
+      "result": "passed",
+      "evidence": "Updated standalone executable generated."
+    }
+  ],
+  "residual_risks": [
+    "Live desktop window dragging, resizing, multiple monitor DPI and auto-scroll interaction were not manually exercised. Custom maximize button does not reproduce Windows snap-layout hover UI.",
+    "Existing silent profile-save failure behavior remains."
+  ],
+  "commit": "same-as-metadata-file"
+}

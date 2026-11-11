@@ -24,6 +24,10 @@ public sealed partial class BrowserForm
 
     private void BuildChrome()
     {
+        FormBorderStyle = FormBorderStyle.None;
+        Padding = new Padding(5);
+        MaximizedBounds = Screen.FromControl(this).WorkingArea;
+        LocationChanged += (_, _) => MaximizedBounds = Screen.FromControl(this).WorkingArea;
         Font = new Font("Segoe UI", 10);
         StartPosition = FormStartPosition.CenterScreen;
         using (var icon = typeof(BrowserForm).Assembly.GetManifestResourceStream("oinzi.ico"))
@@ -108,6 +112,13 @@ public sealed partial class BrowserForm
             case "ai.view": aiViewEngine = Engines.Contains(Read(message, "engine")) ? Read(message, "engine") : null; break;
             case "ai.focus": chromeView.Focus(); break;
             case "ai.blur": if (!paletteOpen) Active()?.View.Focus(); break;
+            case "window.minimize": WindowState = FormWindowState.Minimized; break;
+            case "window.maximize": ToggleWindowMaximize(); break;
+            case "window.close": BeginInvoke(() => Close()); break;
+            case "window.drag":
+                ReleaseCapture();
+                SendMessage(Handle, 0x00A1, new IntPtr(2), IntPtr.Zero);
+                break;
             case "layout": PlaceViewport(message); break;
             case "theme":
                 try { ApplyWindowTheme(ColorTranslator.FromHtml(Read(message, "canvas")), ColorTranslator.FromHtml(Read(message, "ink")), Read(message, "dark") == "True"); }
@@ -302,7 +313,7 @@ public sealed partial class BrowserForm
         if (sidebarMotion) return;
         int Value(string name) => message.GetProperty(name).GetInt32();
         viewport.Tag = Value("r");
-        var bounds = new Rectangle(Value("x"), Value("y"), Math.Max(1, Value("w")), Math.Max(1, Value("h")));
+        var bounds = new Rectangle(chromeView.Left + Value("x"), chromeView.Top + Value("y"), Math.Max(1, Value("w")), Math.Max(1, Value("h")));
         if (viewport.Bounds == bounds) return;
         viewport.Bounds = bounds;
         // Let Windows coalesce paints; synchronous Update() stalls WebView input during layout.
@@ -338,6 +349,33 @@ public sealed partial class BrowserForm
         DwmSetWindowAttribute(Handle, 35, ref caption, sizeof(int));  // DWMWA_CAPTION_COLOR
         DwmSetWindowAttribute(Handle, 36, ref text, sizeof(int));     // DWMWA_TEXT_COLOR
     }
+
+    private void ToggleWindowMaximize()
+    {
+        MaximizedBounds = Screen.FromControl(this).WorkingArea;
+        WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        base.WndProc(ref message);
+        if (message.Msg != 0x0084 || WindowState != FormWindowState.Normal) return;
+        var packed = message.LParam.ToInt64();
+        var point = PointToClient(new Point((short)(packed & 0xffff), (short)((packed >> 16) & 0xffff)));
+        var left = point.X < 5;
+        var right = point.X >= ClientSize.Width - 5;
+        var top = point.Y < 5;
+        var bottom = point.Y >= ClientSize.Height - 5;
+        var hit = top && left ? 13 : top && right ? 14 : bottom && left ? 16 : bottom && right ? 17
+            : left ? 10 : right ? 11 : top ? 12 : bottom ? 15 : 0;
+        if (hit != 0) message.Result = new IntPtr(hit);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
 
     private static bool SystemUsesDarkTheme()
     {
