@@ -24,12 +24,12 @@ static class Program
         var tabType = type.GetNestedType("BrowserTab", BindingFlags.NonPublic)!;
         var tabs = (IDictionary)type.GetField("browserTabs", Private)!.GetValue(form)!;
         var control = (TabControl)type.GetField("tabs", Private)!.GetValue(form)!;
-        object Add(int id, string space, string owner, int minutes = 0, int pending = 0)
+        object Add(int id, string space, string owner, int minutes = 0, int pending = 0, string profile = "default")
         {
             var page = new TabPage();
             var view = new WebView2();
             page.Controls.Add(view);
-            var tab = Activator.CreateInstance(tabType, id, space, page, view, owner)!;
+            var tab = Activator.CreateInstance(tabType, id, space, page, view, owner, profile)!;
             tabType.GetProperty("LastUsed")!.SetValue(tab, DateTime.UtcNow.AddMinutes(-minutes));
             tabType.GetProperty("PendingCommands")!.SetValue(tab, pending);
             tabs.Add(id, tab);
@@ -52,7 +52,7 @@ static class Program
         Command(new { command = "cleanup-run", owner = "run-a" });
         Check(tabs.Contains(1) && !tabs.Contains(2) && tabs.Contains(3), "cleanup preserves user and other run in same space");
         // Session ids are issued by the browser; register this test's space the way a restored session would be.
-        type.GetMethod("RestoreSession", Private)!.Invoke(form, ["work", "work", "terminal"]);
+        type.GetMethod("RestoreSession", Private)!.Invoke(form, ["work", "work", "terminal", "default"]);
         Command(new { command = "close", id = 3, session = "work" });
         Check(!tabs.Contains(3), "uninitialized WebView can be closed");
         Add(4, "stale", "old", 16);
@@ -91,14 +91,30 @@ static class Program
         using var html = typeof(BrowserForm).Assembly.GetManifestResourceStream("chrome.html");
         Check(html is { Length: > 1000 }, "chrome UI is embedded in the executable");
 
-        string[] Kinds(string parser, string line) => ((IEnumerable<System.Text.Json.Nodes.JsonObject>)type.GetMethod(parser, BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, [System.Text.Json.Nodes.JsonNode.Parse(line)!.AsObject()])!).Select(item => item["kind"]!.ToString()).ToArray();
+        Add(20, "user", "", profile: "boxon");
+        Add(21, "user", "", profile: "pluck");
+        Add(22, "terminal-pluck", "terminal", profile: "pluck");
+        type.GetField("userProfile", Private)!.SetValue(form, "pluck");
+        Chrome(new { type = "select", id = 22 });
+        Chrome(new { type = "close", id = 22 });
+        Check(control.SelectedTab == Page(21), "terminal cleanup returns to the current profile user tab");
+        Check((string)type.GetField("userProfile", Private)!.GetValue(form)! == "pluck", "terminal cleanup preserves the selected workspace");
+        Chrome(new { type = "select", id = 1 });
+
+        string[] Kinds(string parser, string line)
+        {
+            var payload = System.Text.Json.Nodes.JsonNode.Parse(line)!.AsObject();
+            object?[] args = parser == "ParseCodex"
+                ? [payload["method"]?.ToString(), payload["params"]!.AsObject()] : [payload];
+            return ((IEnumerable<System.Text.Json.Nodes.JsonObject>)type.GetMethod(parser, BindingFlags.Static | BindingFlags.NonPublic)!
+                .Invoke(null, args)!).Select(item => item["kind"]!.ToString()).ToArray();
+        }
         Check(Kinds("ParseClaude", """{"type":"assistant","message":{"content":[{"type":"text","text":"hi"},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"node agent.mjs x.mjs"}}]}}""")
             .SequenceEqual(["text", "tool"]), "Claude stream events map to panel text and tool rows");
         Check(Kinds("ParseClaude", """{"type":"system","subtype":"init","session_id":"abc"}""").SequenceEqual(["session"]), "Claude session id is captured for resume");
-        Check(Kinds("ParseCodex", """{"type":"item.completed","item":{"id":"i","type":"command_execution","exit_code":0,"aggregated_output":"ok"}}""")
+        Check(Kinds("ParseCodex", """{"method":"item/completed","params":{"item":{"id":"i","type":"commandExecution","exitCode":0,"aggregatedOutput":"ok"}}}""")
             .SequenceEqual(["toolDone"]), "Codex command results map to tool completion");
-        Check(Kinds("ParseCodex", """{"type":"item.completed","item":{"type":"error","message":"Codex is ignoring 1 unrecognized configuration setting."}}""").Length == 0,
+        Check(Kinds("ParseCodex", """{"method":"item/completed","params":{"item":{"type":"error","message":"Codex is ignoring 1 unrecognized configuration setting."}}}""").Length == 0,
             "Codex config warnings are not shown in the panel");
     }
 }

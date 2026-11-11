@@ -95,7 +95,7 @@ public sealed partial class BrowserForm : Form
         KeyPreview = true;
         BuildChrome();
         historySaveTimer.Tick += SaveHistoryTick;
-        tabs.SelectedIndexChanged += (_, _) => { FollowWorkspace(); RefreshAddress(); };
+        tabs.SelectedIndexChanged += (_, _) => { if (!closingTabSelection) FollowWorkspace(); RefreshAddress(); };
         KeyDown += OnShortcut;
         Shown += async (_, _) => await InitializeAsync();
         // Coming back from Windows Settings after choosing the default browser.
@@ -398,31 +398,40 @@ public sealed partial class BrowserForm : Form
         if (closedTabs.TryPop(out var closed)) _ = CreateTabAsync(closed.Url, "user", true, profile: FindProfile(closed.Profile)?.Id ?? DefaultProfile);
     }
 
+    private bool closingTabSelection;
+
     private void CloseTab(BrowserTab tab)
     {
         if (!browserTabs.ContainsKey(tab.Id)) return;
-        if (Active() == tab)
+        var wasActive = Active() == tab;
+        closingTabSelection = true;
+        try
         {
-            // Select a neighbour from the sidebar order instead of whatever TabControl picks.
-            var ordered = OrderedTabs();
-            var index = Array.IndexOf(ordered, tab);
-            bool Neighbour(BrowserTab other) => other.Space == tab.Space && (tab.Agent || other.Profile == tab.Profile);
-            var next = ordered.Skip(index + 1).FirstOrDefault(Neighbour)
-                ?? ordered.Take(index).LastOrDefault(Neighbour)
-                ?? ordered.FirstOrDefault(other => other != tab && !other.Agent)
-                ?? ordered.FirstOrDefault(other => other != tab);
-            if (next != null) tabs.SelectedTab = next.Page;
+            if (wasActive)
+            {
+                // Select a neighbour from the sidebar order instead of whatever TabControl picks.
+                var ordered = OrderedTabs();
+                var index = Array.IndexOf(ordered, tab);
+                bool Neighbour(BrowserTab other) => other.Space == tab.Space && (other.Agent || other.Profile == userProfile);
+                var next = ordered.Skip(index + 1).FirstOrDefault(Neighbour)
+                    ?? ordered.Take(index).LastOrDefault(Neighbour)
+                    ?? ordered.FirstOrDefault(other => other != tab && !other.Agent && other.Profile == userProfile)
+                    ?? ordered.FirstOrDefault(other => other != tab && other.Agent);
+                if (next != null) tabs.SelectedTab = next.Page;
+            }
+            browserTabs.Remove(tab.Id);
+            if (!tab.Agent && tab.View.Source is { } source && source.Scheme is "http" or "https") closedTabs.Push((source.ToString(), tab.Profile));
+            tabs.TabPages.Remove(tab.Page);
+            tab.Frames.Clear();
+            tab.View.Dispose();
+            tab.Page.Dispose();
         }
-        browserTabs.Remove(tab.Id);
-        if (!tab.Agent && tab.View.Source is { } source && source.Scheme is "http" or "https") closedTabs.Push((source.ToString(), tab.Profile));
-        tabs.TabPages.Remove(tab.Page);
-        tab.Frames.Clear();
-        tab.View.Dispose();
-        tab.Page.Dispose();
+        finally { closingTabSelection = false; }
         if (tab.Agent && !browserTabs.Values.Any(other => other.Space == tab.Space) && sessions.GetValueOrDefault(tab.Space)?.Stopped != true)
             sessions.Remove(tab.Space);
         RefreshSidebar();
-        if (browserTabs.Count == 0) _ = CreateTabAsync(HomeUrl, "user", true);
+        if (browserTabs.Count == 0 || wasActive && !browserTabs.Values.Any(other => InWorkspace(other)))
+            _ = CreateTabAsync(HomeUrl, "user", true, profile: userProfile);
     }
 
     private void CleanupIdleTabs()

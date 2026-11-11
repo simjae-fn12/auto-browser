@@ -1,0 +1,153 @@
+{
+  "schema_version": "1.0",
+  "change_id": "20261112-000528-preserve-workspace-when-agent-tabs-close",
+  "created_at": "2026-11-12T00:05:28+09:00",
+  "repository": "auto-browser",
+  "branch": "main",
+  "baseline_commit": "d31e1df9f9223f945097df5228ca707fe9b3c09c",
+  "request": "Keep selected profile after terminal agent task completes",
+  "title": "Preserve workspace when agent tabs close",
+  "purpose": "Prevent terminal cleanup switching PLUCK back to BOXON",
+  "files": [
+    {
+      "path": "native/BrowserForm.cs",
+      "change_type": "modified",
+      "previous_path": null,
+      "line_ranges": [
+        {
+          "old_start": 98,
+          "old_end": 98,
+          "new_start": 98,
+          "new_end": 98
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 401,
+          "new_end": 402
+        },
+        {
+          "old_start": 404,
+          "old_end": 404,
+          "new_start": 406,
+          "new_end": 408
+        },
+        {
+          "old_start": 406,
+          "old_end": 414,
+          "new_start": 410,
+          "new_end": 427
+        },
+        {
+          "old_start": 416,
+          "old_end": 421,
+          "new_start": 429,
+          "new_end": 429
+        },
+        {
+          "old_start": 425,
+          "old_end": 425,
+          "new_start": 433,
+          "new_end": 434
+        }
+      ],
+      "working_tree_sha256": "6b2b15863ee574c5970c00c1f6c4ded356fc64a2e2ab4f7ba56377b2990ff85c",
+      "symbols": [
+        "CloseTab",
+        "tabs.SelectedIndexChanged",
+        "closingTabSelection"
+      ],
+      "purpose": "Keep the chosen workspace stable during tab removal.",
+      "previous_behavior": "Fallback selection could choose a different profile user tab and FollowWorkspace switched the workspace.",
+      "new_behavior": "Closing selects current-profile user tabs or remaining agent tabs, suppresses workspace following during removal and opens a current-profile home tab when no visible candidates remain.",
+      "data_impact": "none: changes in-memory tab selection only; existing new-tab/session persistence behavior retained.",
+      "access_control_impact": "none: profile isolation, login permissions and agent ownership checks remain unchanged.",
+      "risks": [
+        "Tab closure fallback changes which remaining agent tab is selected when the current profile has no user tabs."
+      ],
+      "rollback": "Revert commit c7c2794 and rebuild the executable. Existing profile and session data stays compatible without migration."
+    },
+    {
+      "path": "tests/native-cleanup/Program.cs",
+      "change_type": "modified",
+      "previous_path": null,
+      "line_ranges": [
+        {
+          "old_start": 27,
+          "old_end": 27,
+          "new_start": 27,
+          "new_end": 27
+        },
+        {
+          "old_start": 32,
+          "old_end": 32,
+          "new_start": 32,
+          "new_end": 32
+        },
+        {
+          "old_start": 55,
+          "old_end": 55,
+          "new_start": 55,
+          "new_end": 55
+        },
+        {
+          "old_start": 94,
+          "old_end": 95,
+          "new_start": 94,
+          "new_end": 111
+        },
+        {
+          "old_start": 99,
+          "old_end": 99,
+          "new_start": 115,
+          "new_end": 115
+        },
+        {
+          "old_start": 101,
+          "old_end": 101,
+          "new_start": 117,
+          "new_end": 117
+        }
+      ],
+      "working_tree_sha256": "bc8be42d4459a66046867fb8dcb644cb116eda0a940c317c13319e6cdcdef801",
+      "symbols": [
+        "Add",
+        "Main",
+        "Kinds"
+      ],
+      "purpose": "Cover BOXON/PLUCK terminal tab closure and keep the existing native test harness compatible with current constructors and event formats.",
+      "previous_behavior": "No cross-profile terminal cleanup regression; stale reflection arguments prevented the full suite from completing.",
+      "new_behavior": "Regression asserts closing a terminal agent tab selects PLUCK and preserves its workspace with BOXON present; fixtures use current signatures and Codex events.",
+      "data_impact": "none: synthetic tabs only, no operational profile files touched.",
+      "access_control_impact": "none: profile isolation, login permissions and agent ownership checks remain unchanged.",
+      "risks": [
+        "Reflection-based fixtures require maintenance when private signatures change."
+      ],
+      "rollback": "Revert commit c7c2794 and rebuild the executable. Existing profile and session data stays compatible without migration."
+    }
+  ],
+  "production_safety": {
+    "operational_data": "No operational profile or credential data was read or modified; regression used synthetic uninitialized tabs.",
+    "schema_migration": "none: no schema changes.",
+    "external_side_effects": [
+      "Local tests and native/publish-profile-fix build only; active Oinzi was not restarted."
+    ]
+  },
+  "verification": [
+    {
+      "command": "dotnet run --project tests/native-cleanup/native-cleanup.csproj -c Release --no-restore -p:NoWarn=MSB3277 -p:OutputPath=bin/profile-fix-final/",
+      "result": "passed",
+      "evidence": "All 21 assertions passed, including current-profile fallback and workspace preservation."
+    },
+    {
+      "command": "dotnet publish native/native.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o native/publish-profile-fix -p:NoWarn=MSB3277 -v quiet",
+      "result": "passed",
+      "evidence": "Updated standalone executable built successfully."
+    }
+  ],
+  "residual_risks": [
+    "Live terminal session cleanup not exercised against user data; asynchronous home-tab creation when no visible tabs remain is not covered by this fixture.",
+    "Earlier failed test processes may remain pending Windows crash handling; user browser was left running unchanged."
+  ],
+  "commit": "same-as-metadata-file"
+}
