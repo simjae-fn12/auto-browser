@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "change_id": "20261112-010159-align-browser-chrome-visual-hierarchy",
+  "created_at": "2026-11-12T01:01:59+09:00",
+  "repository": "auto-browser",
+  "branch": "main",
+  "baseline_commit": "cc728b10274e148d81165b2bb165c7f0d7bdad7c",
+  "request": "Improve hierarchy and design of compact browser chrome",
+  "title": "Align browser chrome visual hierarchy",
+  "purpose": "Align address bar and content and reduce competing sidebar emphasis",
+  "files": [
+    {
+      "path": "native/chrome/chrome.html",
+      "change_type": "modified",
+      "previous_path": null,
+      "line_ranges": [
+        {
+          "old_start": 906,
+          "old_end": 909,
+          "new_start": 906,
+          "new_end": 910
+        },
+        {
+          "old_start": 911,
+          "old_end": 911,
+          "new_start": 912,
+          "new_end": 912
+        },
+        {
+          "old_start": 913,
+          "old_end": 913,
+          "new_start": 914,
+          "new_end": 914
+        },
+        {
+          "old_start": null,
+          "old_end": null,
+          "new_start": 917,
+          "new_end": 925
+        }
+      ],
+      "working_tree_sha256": "bae7604dd1fe436616000a11220c17848be313525020b26ccd42b8423c2304be",
+      "symbols": [
+        "windowbar",
+        "newtab",
+        "sidebar",
+        "stage",
+        "window-controls"
+      ],
+      "purpose": "Align address bar and content and reduce competing sidebar emphasis",
+      "previous_behavior": "Address bar started left of the content edge, stopped at a fixed maximum width and competed with the tinted new-tab button.",
+      "new_behavior": "Navigation occupies the sidebar-width region; address field aligns with content and expands to available width. New-tab action is neutral, top icons have consistent dimensions and window controls use restrained contrast.",
+      "data_impact": "none: CSS-only visual adjustments without persistence changes.",
+      "access_control_impact": "none: control behavior and permissions unchanged.",
+      "risks": [
+        "Collapsed sidebar keeps the top navigation width fixed to retain all navigation buttons."
+      ],
+      "rollback": "Revert this commit and rebuild; point the desktop shortcut to the previous executable. No stored data changes."
+    }
+  ],
+  "production_safety": {
+    "operational_data": "No operational profiles or settings were read or modified. Headless tests used synthetic content.",
+    "schema_migration": "none: CSS-only changes.",
+    "external_side_effects": [
+      "Local native/publish-refined build and desktop shortcut update; active Oinzi remains untouched."
+    ]
+  },
+  "verification": [
+    {
+      "command": "node C:/Users/SIMJAE/AppData/Local/Temp/oinzi-hierarchy-test.mjs",
+      "result": "passed",
+      "evidence": "Headless browser: address/content edges align within 1px at 780 and 1380px, no horizontal overflow, no page errors; settings isolation, drag placement and compact header regressions pass. Rendered screenshot visually reviewed."
+    },
+    {
+      "command": "dotnet publish native/native.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o native/publish-refined -p:NoWarn=MSB3277 -v quiet",
+      "result": "passed",
+      "evidence": "Standalone updated executable built."
+    }
+  ],
+  "residual_risks": [
+    "Native desktop rendering at non-default DPI and live website combinations were not manually exercised."
+  ],
+  "commit": "same-as-metadata-file"
+}

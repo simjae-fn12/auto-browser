@@ -903,16 +903,26 @@ body.settings #freeze { filter: blur(18px) saturate(.8) brightness(.9); transfor
 
 body { display: flex; flex-direction: column; }
 #app { flex: 1; min-height: 0; height: auto; }
-#windowbar { display: flex; align-items: center; height: 44px; flex: none; gap: 8px; }
-#windowbar .top { height: 44px; padding: 0 6px; gap: 4px; }
-#windowbar .nav { flex: none; opacity: 1; pointer-events: auto; }
-#windowbar #urlbar { flex: 1; max-width: 760px; min-width: 120px; height: 32px; margin: 0; }
+#windowbar { display: flex; align-items: center; height: 44px; flex: none; gap: 0; }
+#windowbar .top { width: 268px; flex: none; height: 44px; padding: 0 10px; gap: 8px; }
+#windowbar .nav { flex: 1; gap: 4px; opacity: 1; pointer-events: auto; }
+#windowbar #urlbar { flex: 1; min-width: 120px; height: 32px; margin: 0; border: 1px solid var(--line); border-radius: 8px; box-shadow: none; }
+#windowbar #urlbar:hover { background: color-mix(in srgb, var(--surface) 90%, var(--canvas)); }
 #windowbar #urlbar .text { opacity: 1; }
-#window-drag { flex: 1; align-self: stretch; min-width: 40px; }
+#window-drag { width: 32px; flex: none; align-self: stretch; }
 .window-controls { display: flex; height: 44px; flex: none; }
-.window-controls button { width: 44px; font-size: 15px; border-radius: 4px; }
+.window-controls button { width: 44px; font-size: 14px; border-radius: 0; color: var(--ink-2); }
 .window-controls button:hover { background: var(--hover); }
 .window-controls #winClose:hover { background: #c42b1c; color: white; }
+#sidebar { padding-top: 8px; }
+#newtab { height: 32px; margin: 0 10px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); }
+#newtab:hover { border-color: var(--line); background: var(--hover); color: var(--ink); }
+#newtab kbd { background: transparent; font-weight: 400; }
+#stage { padding-top: 8px; }
+#windowbar .icon-btn { width: 30px; height: 30px; border-radius: 7px; }
+#windowbar #toggle { margin-right: 4px; }
+#windowbar .nav #overviewBtn { margin-left: auto; }
+body.collapsed #windowbar #urlbar { margin-left: 0; }
 .profile-grip { -webkit-user-drag: element; }
 </style>
 </head>
