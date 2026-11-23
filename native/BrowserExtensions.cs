@@ -330,7 +330,7 @@ public sealed partial class BrowserForm
                     Note($"「{await InstallFromStoreAsync(profile, Read(message, "text"))}」을(를) 「{ProfileName(profile)}」에 설치했습니다.");
                     break;
                 case "ext.storeInstall":
-                    if (Active() is not { } shown || shown.View.Source?.ToString() is not { } page) return;
+                    if (Active() is not { } shown || TabUrl(shown) is not { Length: > 0 } page) return;
                     profile = shown.Profile;
                     PostChrome(new { type = "extensions.busy", busy = true });
                     try { PostChrome(new { type = "toast", text = $"「{await InstallFromStoreAsync(profile, page)}」을(를) 「{ProfileName(profile)}」에 추가했습니다." }); }

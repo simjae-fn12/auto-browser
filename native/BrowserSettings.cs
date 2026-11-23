@@ -239,6 +239,10 @@ public sealed partial class BrowserForm
     private async Task ClearBrowsingDataAsync(string kinds)
     {
         if (chromeView.CoreWebView2?.Profile is not { } chromeProfile) return;
+        // A profile whose tabs are all still asleep has no WebView2 to clear through, so one of them gets its view first.
+        foreach (var group in browserTabs.Values.GroupBy(tab => tab.Profile).Where(group => group.All(tab => tab.Asleep)).ToArray())
+            try { await WakeAsync(group.First(), load: false); }
+            catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException or ObjectDisposedException) { }
         var profiles = browserTabs.Values.Select(tab => tab.View.CoreWebView2?.Profile).OfType<CoreWebView2Profile>().Append(chromeProfile)
             .DistinctBy(profile => profile.ProfileName).ToArray();
         var selected = kinds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

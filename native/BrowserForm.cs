@@ -25,6 +25,14 @@ public sealed partial class BrowserForm : Form
         public int PendingCommands { get; set; }
         public int Order { get; set; }
         public bool Loading { get; set; }
+        // A restored tab starts asleep: no WebView2 behind it until the person selects it or an agent uses it,
+        // so a start with dozens of saved tabs does not load them all. Restore is what the tab shows and saves
+        // until its page reports a real address.
+        public bool Asleep { get; set; }
+        public Task? Waking { get; set; }
+        public SavedTab? Restore { get; set; }
+        public bool RestoreStarted { get; set; }
+        public Task? Restoring { get; set; }
         public Dictionary<string, CoreWebView2Frame> Frames { get; } = [];
         // Latest overview thumbnail, and the capture still running for it; hidden tabs can take seconds to yield a frame.
         public string? Thumb { get; set; }
@@ -65,7 +73,11 @@ public sealed partial class BrowserForm : Form
         public string Profile { get; set; } = DefaultProfile;
     }
 
-    private sealed record SavedTab(string Url, string Space, bool Active = false, string Profile = "default");
+    private sealed record SavedTab(string Url, string Space, bool Active = false, string Profile = "default", string Title = "", string Favicon = "");
+
+    private static string TabUrl(BrowserTab tab) => tab.Restore?.Url ?? tab.View.Source?.ToString() ?? "";
+    private static string DocumentTitle(BrowserTab tab) => tab.Restore?.Title ?? tab.View.CoreWebView2?.DocumentTitle ?? "";
+    private static string TabFavicon(BrowserTab tab) => tab.Restore?.Favicon ?? tab.View.CoreWebView2?.FaviconUri ?? "";
 
     private const string Home = "https://www.google.com/";
     private static readonly System.Text.RegularExpressions.Regex SessionIdPattern = new("^[A-Za-z0-9_-]{6,64}$");
@@ -95,7 +107,12 @@ public sealed partial class BrowserForm : Form
         KeyPreview = true;
         BuildChrome();
         historySaveTimer.Tick += SaveHistoryTick;
-        tabs.SelectedIndexChanged += (_, _) => { if (!closingTabSelection) FollowWorkspace(); RefreshAddress(); };
+        tabs.SelectedIndexChanged += (_, _) =>
+        {
+            if (!closingTabSelection) FollowWorkspace();
+            if (Active() is { } shown) _ = WakeShownAsync(shown);
+            RefreshAddress();
+        };
         KeyDown += OnShortcut;
         Shown += async (_, _) => await InitializeAsync();
         // Coming back from Windows Settings after choosing the default browser.
@@ -144,8 +161,10 @@ public sealed partial class BrowserForm : Form
             for (var i = 0; i < restored.Length; i++)
             {
                 if (restored[i].Space != "user") RestoreSession(restored[i].Space, restored[i].Space, "terminal", restored[i].Profile);
-                await CreateTabAsync(restored[i].Url, restored[i].Space, restored[i].Active || (!restored.Any(tab => tab.Active) && i == 0),
-                    profile: FindProfile(restored[i].Profile)?.Id ?? DefaultProfile);
+                // Only the tab in view loads now; the rest wake when they are selected or an agent uses them.
+                var shown = restored[i].Active || (!restored.Any(tab => tab.Active) && i == 0);
+                await CreateTabAsync(restored[i].Url, restored[i].Space, shown,
+                    profile: FindProfile(restored[i].Profile)?.Id ?? DefaultProfile, asleep: shown ? null : restored[i]);
             }
             await OpenLaunchLinksAsync();
             Active()?.View.Focus();
@@ -171,7 +190,8 @@ public sealed partial class BrowserForm : Form
                 ? legacy.Select(url => new SavedTab(url?.GetValue<string>() ?? "", "user"))
                 : (root?["tabs"]?.AsArray() ?? []).Select(tab => new SavedTab(
                     tab?["url"]?.GetValue<string>() ?? "", tab?["space"]?.GetValue<string>() ?? "user", tab?["active"]?.GetValue<bool>() == true,
-                    tab?["profile"]?.GetValue<string>() ?? DefaultProfile));
+                    tab?["profile"]?.GetValue<string>() ?? DefaultProfile,
+                    tab?["title"]?.GetValue<string>() ?? "", tab?["favicon"]?.GetValue<string>() ?? ""));
             var valid = items.Where(tab => Uri.TryCreate(tab.Url, UriKind.Absolute, out var uri)
                     && uri.Scheme is "http" or "https" or "file" && !string.IsNullOrWhiteSpace(tab.Space) && tab.Space.Length <= 80)
                 .ToArray();
@@ -198,7 +218,8 @@ public sealed partial class BrowserForm : Form
     private void SaveTabs()
     {
         if (!Directory.Exists(dataDir)) return;
-        var saved = OrderedTabs().Select(tab => new { url = tab.View.Source?.ToString(), space = tab.Space, active = tab == Active(), profile = tab.Profile })
+        var saved = OrderedTabs().Select(tab => new { url = TabUrl(tab), space = tab.Space, active = tab == Active(), profile = tab.Profile,
+                title = Clip(DocumentTitle(tab), 200), favicon = TabFavicon(tab) is { Length: <= 2000 } favicon ? favicon : "" })
             .Where(tab => Uri.TryCreate(tab.url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "file").ToArray();
         var savedSessions = sessions.Values.Where(session => saved.Any(tab => tab.space == session.Id)).OrderBy(session => session.Order)
             .Select(session => new { id = session.Id, label = session.Label, kind = session.Kind, profile = session.Profile }).ToArray();
@@ -232,7 +253,8 @@ public sealed partial class BrowserForm : Form
 
     private string SessionLabel(string space) => sessions.GetValueOrDefault(space)?.Label ?? space;
 
-    private async Task<BrowserTab> CreateTabAsync(string? url, string space, bool select, bool navigate = true, string owner = "", string? profile = null)
+    private async Task<BrowserTab> CreateTabAsync(string? url, string space, bool select, bool navigate = true, string owner = "", string? profile = null,
+        SavedTab? asleep = null)
     {
         profile ??= space == "user" ? userProfile : DefaultProfile;
         if (environment == null) throw new InvalidOperationException("Browser is not ready");
@@ -247,55 +269,18 @@ public sealed partial class BrowserForm : Form
         var tab = new BrowserTab(id, space, page, view, owner, profile) { Order = nextOrder++ };
         browserTabs.Add(id, tab);
         tabs.TabPages.Add(page);
+        if (asleep != null)
+        {
+            tab.Asleep = true;
+            tab.Restore = asleep with { Url = NormalizeUrl(url) };
+            UpdateTitle(tab);
+            return tab;
+        }
         if (select) tabs.SelectedTab = page;
         RefreshSidebar();
         try
         {
-            if (ControllerOptions(profile) is { } options) await view.EnsureCoreWebView2Async(environment, options);
-            else await view.EnsureCoreWebView2Async(environment);
-            view.CoreWebView2.DocumentTitleChanged += (_, _) => UpdateTitle(tab);
-            view.CoreWebView2.SourceChanged += (_, _) => { if (Active() == tab) RefreshAddress(); };
-            view.CoreWebView2.NavigationStarting += (_, _) =>
-            {
-                tab.Frames.Clear(); tab.Loading = true; tab.DocumentSerial++; tab.LoginSecrets.Clear(); RefreshSidebar();
-            };
-            view.CoreWebView2.NavigationCompleted += (_, _) =>
-            {
-                tab.Loading = false;
-                if (Active() == tab) RefreshAddress(); else RefreshSidebar();
-                ScheduleThumbnail(tab);
-            };
-            view.CoreWebView2.FaviconChanged += (_, _) => RefreshSidebar();
-            view.CoreWebView2.HistoryChanged += (_, _) => { if (Active() == tab) RefreshNavigation(); };
-            view.CoreWebView2.FrameCreated += (_, e) =>
-            {
-                var frameId = $"f{e.Frame.FrameId}";
-                tab.Frames[frameId] = e.Frame;
-                e.Frame.Destroyed += (_, _) => tab.Frames.Remove(frameId);
-            };
-            view.CoreWebView2.NewWindowRequested += async (_, e) =>
-            {
-                var deferral = e.GetDeferral();
-                try
-                {
-                    // A popup must live in its opener's profile, or WebView2 refuses to attach it.
-                    var popup = await CreateTabAsync(null, tab.Space, !tab.Agent, navigate: false, owner: tab.Owner, profile: tab.Profile);
-                    e.NewWindow = popup.View.CoreWebView2;
-                    e.Handled = true;
-                }
-                catch
-                {
-                    // Agent popups must not escape tab limits into unmanaged windows.
-                    e.Handled = tab.Agent;
-                }
-                finally { deferral.Complete(); }
-            };
-            view.CoreWebView2.WindowCloseRequested += (_, _) => CloseTab(tab);
-            // A native "leave site?" or alert box blocks the page until someone clicks it, and agents cannot click it.
-            // Built-in dialogs are off everywhere; agent work accepts them, the person still gets a real prompt.
-            view.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = false;
-            ApplyTabPrefs(view.CoreWebView2);
-            view.CoreWebView2.ScriptDialogOpening += (_, e) => AnswerDialog(tab, e);
+            await AttachViewAsync(tab);
             if (navigate) view.CoreWebView2.Navigate(NormalizeUrl(url));
             return tab;
         }
@@ -310,9 +295,116 @@ public sealed partial class BrowserForm : Form
         }
     }
 
+    // Gives a tab its WebView2. New tabs get one at once; a restored tab gets it when it wakes.
+    private async Task AttachViewAsync(BrowserTab tab)
+    {
+        var view = tab.View;
+        if (ControllerOptions(tab.Profile) is { } options) await view.EnsureCoreWebView2Async(environment, options);
+        else await view.EnsureCoreWebView2Async(environment);
+        tab.Asleep = false;
+        view.CoreWebView2.DocumentTitleChanged += (_, _) => UpdateTitle(tab);
+        view.CoreWebView2.SourceChanged += (_, _) =>
+        {
+            // The page has its own address now, so the saved one stops standing in for it.
+            if (tab.Restore != null && view.CoreWebView2.Source != "about:blank") tab.Restore = null;
+            if (Active() == tab) RefreshAddress();
+        };
+        view.CoreWebView2.NavigationStarting += (_, e) =>
+        {
+            // Going somewhere other than the saved page (about:blank included) ends the stand-in as well.
+            if (tab.Restore is { } saved && tab.RestoreStarted && e.Uri != saved.Url) tab.Restore = null;
+            tab.Frames.Clear(); tab.Loading = true; tab.DocumentSerial++; tab.LoginSecrets.Clear(); RefreshSidebar();
+        };
+        view.CoreWebView2.NavigationCompleted += (_, _) =>
+        {
+            tab.Loading = false;
+            if (Active() == tab) RefreshAddress(); else RefreshSidebar();
+            ScheduleThumbnail(tab);
+        };
+        view.CoreWebView2.FaviconChanged += (_, _) => RefreshSidebar();
+        view.CoreWebView2.HistoryChanged += (_, _) => { if (Active() == tab) RefreshNavigation(); };
+        view.CoreWebView2.FrameCreated += (_, e) =>
+        {
+            var frameId = $"f{e.Frame.FrameId}";
+            tab.Frames[frameId] = e.Frame;
+            e.Frame.Destroyed += (_, _) => tab.Frames.Remove(frameId);
+        };
+        view.CoreWebView2.NewWindowRequested += async (_, e) =>
+        {
+            var deferral = e.GetDeferral();
+            try
+            {
+                // A popup must live in its opener's profile, or WebView2 refuses to attach it.
+                var popup = await CreateTabAsync(null, tab.Space, !tab.Agent, navigate: false, owner: tab.Owner, profile: tab.Profile);
+                e.NewWindow = popup.View.CoreWebView2;
+                e.Handled = true;
+            }
+            catch
+            {
+                // Agent popups must not escape tab limits into unmanaged windows.
+                e.Handled = tab.Agent;
+            }
+            finally { deferral.Complete(); }
+        };
+        view.CoreWebView2.WindowCloseRequested += (_, _) => CloseTab(tab);
+        // A native "leave site?" or alert box blocks the page until someone clicks it, and agents cannot click it.
+        // Built-in dialogs are off everywhere; agent work accepts them, the person still gets a real prompt.
+        view.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = false;
+        ApplyTabPrefs(view.CoreWebView2);
+        view.CoreWebView2.ScriptDialogOpening += (_, e) => AnswerDialog(tab, e);
+    }
+
+    // Wakes a restored tab. With load false the tab only gets its WebView2 and the caller decides what it opens.
+    private async Task WakeAsync(BrowserTab tab, bool load = true)
+    {
+        if (tab.Asleep) await (tab.Waking is { IsCompleted: false } running ? running : tab.Waking = AttachViewAsync(tab));
+        if (load && tab.Restore is { } restore && !tab.RestoreStarted && tab.View.CoreWebView2 is { } core)
+        {
+            tab.RestoreStarted = true;
+            tab.Restoring = RestoreAsync(core, restore.Url);
+        }
+    }
+
+    // Loads the saved page; whoever needs the page (an agent command) waits on tab.Restoring.
+    private static async Task RestoreAsync(CoreWebView2 core, string url)
+    {
+        try { await NavigateAsync(core, url); }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or System.Runtime.InteropServices.COMException or ObjectDisposedException) { }
+    }
+
+    // The address bar acts on the tab in view even while it is still getting its WebView2.
+    private async Task NavigateShownAsync(BrowserTab tab, string url)
+    {
+        try
+        {
+            await WakeAsync(tab, load: false);
+            tab.RestoreStarted = true;
+            tab.View.CoreWebView2?.Navigate(NormalizeUrl(url));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException or ObjectDisposedException) { }
+    }
+
+    private void ReloadShown()
+    {
+        if (Active()?.View.CoreWebView2 is { } core) core.Reload();
+    }
+
+    private async Task WakeShownAsync(BrowserTab tab)
+    {
+        if (!tab.Asleep && (tab.Restore == null || tab.RestoreStarted)) return;
+        try
+        {
+            await WakeAsync(tab);
+            // Focus asked for before the WebView2 existed went nowhere.
+            if (Active() == tab && !paletteOpen && !chromeView.ContainsFocus) tab.View.Focus();
+        }
+        // The tab was closed while it woke, or WebView2 could not start; selecting it again retries.
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException or ObjectDisposedException) { }
+    }
+
     private void UpdateTitle(BrowserTab tab)
     {
-        var title = tab.View.CoreWebView2?.DocumentTitle;
+        var title = DocumentTitle(tab);
         tab.Page.Text = (tab.Agent ? $"◆ {SessionLabel(tab.Space)} · " : "") + (string.IsNullOrWhiteSpace(title) ? "새 탭" : title.Length > 24 ? title[..24] + "…" : title);
         if (Active() == tab) Text = string.IsNullOrWhiteSpace(title) ? "Oinzi" : $"Oinzi — {title}";
         RefreshSidebar();
@@ -323,7 +415,7 @@ public sealed partial class BrowserForm : Form
     private void RefreshAddress()
     {
         var tab = Active();
-        var title = tab?.View.CoreWebView2?.DocumentTitle;
+        var title = tab == null ? null : DocumentTitle(tab);
         Text = string.IsNullOrWhiteSpace(title) ? "Oinzi" : $"Oinzi — {title}";
         RefreshSidebar();
         _ = PostToolbarExtensionsAsync();
@@ -376,7 +468,7 @@ public sealed partial class BrowserForm : Form
             var n = key == Keys.D9 ? users.Length - 1 : key - Keys.D1;
             if (n >= 0 && n < users.Length) ShowTab(users[n]);
         }
-        else if ((ctrl && !alt && !shift && key == Keys.R) || (!ctrl && !alt && key == Keys.F5)) Active()?.View.Reload();
+        else if ((ctrl && !alt && !shift && key == Keys.R) || (!ctrl && !alt && key == Keys.F5)) ReloadShown();
         else if (alt && !ctrl && key == Keys.Left) GoBack();
         else if (alt && !ctrl && key == Keys.Right) GoForward();
         else return false;
@@ -420,7 +512,7 @@ public sealed partial class BrowserForm : Form
                 if (next != null) tabs.SelectedTab = next.Page;
             }
             browserTabs.Remove(tab.Id);
-            if (!tab.Agent && tab.View.Source is { } source && source.Scheme is "http" or "https") closedTabs.Push((source.ToString(), tab.Profile));
+            if (!tab.Agent && Uri.TryCreate(TabUrl(tab), UriKind.Absolute, out var source) && source.Scheme is "http" or "https") closedTabs.Push((source.ToString(), tab.Profile));
             tabs.TabPages.Remove(tab.Page);
             tab.Frames.Clear();
             tab.View.Dispose();
@@ -453,8 +545,8 @@ public sealed partial class BrowserForm : Form
 
     private object[] SessionTabs(string space) => browserTabs.Values.Where(tab => tab.Space == space).Select(tab => (object)new
     {
-        id = tab.Id, agent = tab.Agent, space = tab.Space, title = tab.View.CoreWebView2?.DocumentTitle ?? "",
-        url = tab.View.Source?.ToString() ?? "", profile = ProfileName(tab.Profile)
+        id = tab.Id, agent = tab.Agent, space = tab.Space, title = DocumentTitle(tab),
+        url = TabUrl(tab), profile = ProfileName(tab.Profile)
     }).ToArray();
 
     private void StartServer()
@@ -593,8 +685,8 @@ public sealed partial class BrowserForm : Form
             if (active.Space == "user") session.UserTabs.Add(active.Id);
             return new
             {
-                id = active.Id, space = active.Space, title = active.View.CoreWebView2?.DocumentTitle ?? "",
-                url = active.View.Source?.ToString() ?? "", profile = ProfileName(active.Profile)
+                id = active.Id, space = active.Space, title = DocumentTitle(active),
+                url = TabUrl(active), profile = ProfileName(active.Profile)
             };
         }
         if (command == "profiles") return new { profiles = ProfilesForAgent(), sessionProfile = ProfileName(session.Profile) };
@@ -616,6 +708,17 @@ public sealed partial class BrowserForm : Form
             if (userTab) throw new InvalidOperationException("The person's tabs cannot be closed by an agent");
             CloseTab(tab);
             return new { ok = true };
+        }
+        // A restored tab loads its saved page before the first command, unless that command opens another page anyway.
+        if (command == "goto")
+        {
+            if (tab.Asleep) await WakeAsync(tab, load: false);
+            tab.RestoreStarted = true;
+        }
+        else
+        {
+            if (tab.Asleep || (tab.Restore != null && !tab.RestoreStarted)) await WakeAsync(tab);
+            if (tab.Restoring is { IsCompleted: false } restoring) await restoring;
         }
         var core = tab.View.CoreWebView2 ?? throw new InvalidOperationException("Tab is not ready");
         // Only the conversation the person is watching in the AI panel may move their view or status line.

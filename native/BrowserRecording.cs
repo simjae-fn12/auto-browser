@@ -126,7 +126,8 @@ public sealed partial class BrowserForm
         if (space == "user") return Active() is { Agent: false } viewed ? viewed : null;
         var granted = sessions.GetValueOrDefault(space)?.UserTabs.Select(id => browserTabs.GetValueOrDefault(id)).OfType<BrowserTab>() ?? [];
         var candidates = browserTabs.Values.Where(tab => tab.Space == space).Concat(granted).ToArray();
-        return candidates.FirstOrDefault(tab => tab.PendingCommands > 0) ?? candidates.MaxBy(tab => tab.LastUsed);
+        // A restored tab still asleep has nothing to capture.
+        return candidates.FirstOrDefault(tab => tab.PendingCommands > 0) ?? candidates.Where(tab => !tab.Asleep).MaxBy(tab => tab.LastUsed);
     }
 
     private async Task CaptureRecordingFrameAsync(Recording recording)

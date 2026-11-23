@@ -102,7 +102,8 @@ public sealed partial class BrowserForm
     }
 
     private static string TabTitle(BrowserTab tab) =>
-        tab.View.CoreWebView2?.DocumentTitle is { Length: > 0 } title ? title : tab.View.Source?.Host ?? "새 탭";
+        DocumentTitle(tab) is { Length: > 0 } title ? title
+        : Uri.TryCreate(TabUrl(tab), UriKind.Absolute, out var address) && address.Host.Length > 0 ? address.Host : "새 탭";
 
     // Keeps a recent thumbnail of each tab after it loads or an agent acts on it, so the overview opens with pictures.
     private async void ScheduleThumbnail(BrowserTab tab)

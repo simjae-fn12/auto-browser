@@ -134,12 +134,12 @@ public sealed partial class BrowserForm
             case "open":
                 var url = Read(message, "url");
                 if (Read(message, "newTab") == "True") _ = CreateTabAsync(url, "user", true);
-                else if (Active()?.View.CoreWebView2 is { } core) core.Navigate(NormalizeUrl(url));
+                else if (Active() is { } shown) _ = NavigateShownAsync(shown, url);
                 else _ = CreateTabAsync(url, "user", true);
                 break;
             case "back": GoBack(); break;
             case "forward": GoForward(); break;
-            case "reload": Active()?.View.Reload(); break;
+            case "reload": ReloadShown(); break;
             case "collapse": _ = AnimateSidebarAsync(Read(message, "collapsed") == "True"); break;
             case "sidebar.ready":
                 sidebarPreparing = false;
@@ -216,7 +216,7 @@ public sealed partial class BrowserForm
             active = active?.Id,
             canBack = active?.View.CanGoBack == true,
             canForward = active?.View.CanGoForward == true,
-            url = active?.View.Source?.ToString() ?? "",
+            url = active == null ? "" : TabUrl(active),
             loading = active?.Loading == true,
             collapsed = sidebarCollapsed,
             userProfile,
@@ -225,9 +225,9 @@ public sealed partial class BrowserForm
             tabs = OrderedTabs().Where(InWorkspace).Select(tab => new
             {
                 id = tab.Id, space = tab.Space, label = tab.Agent ? SessionLabel(tab.Space) : "", agent = tab.Agent,
-                title = tab.View.CoreWebView2?.DocumentTitle ?? "",
-                url = tab.View.Source?.ToString() ?? "",
-                favicon = tab.View.CoreWebView2?.FaviconUri ?? "",
+                title = DocumentTitle(tab),
+                url = TabUrl(tab),
+                favicon = TabFavicon(tab),
                 loading = tab.Loading, busy = tab.PendingCommands > 0, profile = tab.Profile,
                 sessionProfile = tab.Agent ? sessions.GetValueOrDefault(tab.Space)?.Profile : null
             }).ToArray()
@@ -287,7 +287,7 @@ public sealed partial class BrowserForm
     {
         if (!chromeReady) return;
         while (sidebarPreparing || sidebarMotion) await Task.Delay(16);
-        var url = Active()?.View.Source?.ToString() ?? "";
+        var url = Active() is { } shown ? TabUrl(shown) : "";
         if (paletteOpen)
         {
             PostChrome(new { type = "palette", mode, url });

@@ -202,3 +202,21 @@ g.exe, codex-resources\…; npm 패키지와 같은 구성)를 `%LOCALAPPDATA%\P
 - 버전은 native.csproj `<Version>`. 설치 파일 이름·환영 화면·정보에 나온다. 다른 PC에 새 빌드를 줄 때는 꼭 올린다(같은 0.9.0이라 새 파일인지 구분 못 한 적 있음).
 - Codex 로그인 여부는 auth.json 존재가 아니라 `codex --no-daemon login status` 종료 코드로 판단. 「로그아웃」/「다른 계정으로」는 CLI의 `logout`(`claude auth logout`)을 숨김 실행.
 - 제거 시 Oinzi 데이터 삭제 여부를 묻는다(조용한 제거면 안 지움). ~/.claude, ~/.codex 로그인은 Oinzi 것이 아니라 절대 지우지 않는다.
+# 탭 복원: 잠든 탭(Asleep/Restore), 시작 속도 (BrowserForm.cs CreateTabAsync·WakeAsync)
+
+## WHY: 저장된 탭을 시작할 때 전부 로드하지 않음
+- 예전에는 저장된 탭마다 WebView2를 순서대로 만들고 페이지를 로드한 뒤에야 `StartServer`(에이전트 연결)가 떴다. 탭 32개·프로필 7개면 WebView2 프로세스 50여 개에 1.7GB를 쓰고, 에이전트는 켜고 25초를 기다려야 했다.
+- 지금은 보고 있던 탭만 WebView2를 받고, 나머지는 `Asleep`(WebView2 없음) 상태로 사이드바에만 있다. 실측(로컬 페이지 12탭): 연결 준비 1.6초 → 0.7초, WebView 메모리 1,350MB → 485MB.
+- 깨우는 곳은 두 군데뿐: 탭이 선택될 때(`SelectedIndexChanged` → `WakeShownAsync`), 에이전트 명령이 그 탭을 가리킬 때(`CommandAsync`, 저장된 페이지 로드가 끝날 때까지 기다림. `goto`는 저장된 페이지를 건너뜀).
+
+## 규칙·함정
+- 탭의 주소·제목·파비콘은 `tab.View.Source`/`CoreWebView2.DocumentTitle`을 직접 읽지 말고 `TabUrl`/`DocumentTitle`/`TabFavicon`을 쓴다. 직접 읽으면 잠든 탭이 `about:blank`로 보이고, `SaveTabs`가 그 탭을 버려 다음 시작 때 사라진다.
+- `Restore`는 페이지가 실제 주소를 알릴 때(`SourceChanged`, about:blank 제외)까지 남는다. 깨운 직후나 로드 실패(오프라인)에도 저장된 주소가 유지되게 하려는 것이다. 다시 로드하지 않게 막는 것은 `RestoreStarted`다.
+- tabs.json에 `title`·`favicon`도 저장한다(잠든 탭을 사이드바에 그리려고). 없는 옛 파일은 빈 값으로 읽는다.
+- 모든 탭을 도는 코드는 `CoreWebView2 == null`인 탭이 오래 있을 수 있다고 가정한다. 프로필 단위 작업(인터넷 사용 기록 삭제)은 탭이 전부 잠든 프로필에서 `WakeAsync(tab, load: false)`로 WebView2만 먼저 붙인다.
+- 테스트: 임시 데이터 폴더에 tabs.json을 써 두고 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<포트>`로 띄우면 `/json/list`의 page 대상 수로 "실제로 로드된 탭"을 셀 수 있다.
+
+# 빌드·실행 경로: native\publish 하나로 통일
+- 실행 파일은 `native\publish\oinzi.exe` 하나만 쓴다(바탕화면 바로가기, 전역 CLAUDE.md·oinzi-browser 스킬의 자동 실행). 예전에는 `publish-<기능이름>` 폴더가 9개(각 114MB) 쌓이고 바로가기·자동 실행이 서로 다른 버전을 가리켰다.
+- Oinzi가 실행 중이면 exe를 덮어쓸 수 없다. 다른 폴더에 publish한 뒤 `publish\oinzi.exe`를 `oinzi.exe.old`로 이름만 바꾸고 새 파일을 복사한다(실행 중인 exe도 이름 변경은 된다). 새 버전은 Oinzi를 완전히 닫았다 켜야 적용된다 — 실행 중이면 바로가기는 기존 창으로 링크만 넘기고 끝난다.
+- publish 옵션: `-c Release -r win-x64 --self-contained true -p:PublishSingleFile=true`. ReadyToRun은 실측 0.03초 이득에 14MB 증가라 쓰지 않는다. `SatelliteResourceLanguages=ko;en`으로 8MB 줄였다.
