@@ -684,10 +684,11 @@ body.assist #assist .card { opacity: 1; transform: none; }
 .tool .tail { margin: 0; padding: 0 10px 7px 32px; font: 11px/1.45 "Cascadia Mono", Consolas, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-all; }
 .tool:not(.run) .tail { display: none; }
 .msg.me .steer { display: block; font-size: 11px; color: var(--ai); margin-bottom: 3px; }
-#slashMenu { margin: 0 10px 4px; border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-pop); overflow: hidden; font-size: 12.5px; }
+#slashMenu { margin: 0 10px 4px; border-radius: 10px; background: var(--surface); box-shadow: var(--shadow-pop); max-height: min(240px, 34vh); overflow: auto; font-size: 12.5px; }
 #slashMenu[hidden] { display: none; }
-#slashMenu div { display: flex; gap: 10px; padding: 7px 12px; color: var(--ink-2); }
+#slashMenu div { display: flex; gap: 10px; padding: 7px 12px; color: var(--ink-2); cursor: pointer; }
 #slashMenu div b { font-family: "Cascadia Mono", Consolas, monospace; font-weight: 600; color: var(--ink); min-width: 74px; }
+#slashMenu div span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #slashMenu div.sel { background: var(--hover); }
 
 /* AI working state — Oinzi motion set (docs/ego-motion-reference.md §3). Same seed mark as the in-page overlay. */
@@ -911,7 +912,7 @@ body { display: flex; flex-direction: column; }
 #windowbar #urlbar .text { opacity: 1; }
 #window-drag { width: 32px; flex: none; align-self: stretch; }
 .window-controls { display: flex; height: 44px; flex: none; }
-.window-controls button { width: 44px; font-size: 14px; border-radius: 0; color: var(--ink-2); }
+.window-controls button { width: 44px; font: 10px/1 "Segoe Fluent Icons", "Segoe MDL2 Assets"; border-radius: 0; color: var(--ink-2); }
 .window-controls button:hover { background: var(--hover); }
 .window-controls #winClose:hover { background: #c42b1c; color: white; }
 #sidebar { padding-top: 8px; }
@@ -970,7 +971,13 @@ body.collapsed #windowbar #urlbar { margin-left: 0; }
       <span class="ico"><svg><use href="#i-search"/></svg></span>
       <span class="text fade"><span class="placeholder">검색어 또는 주소 입력</span></span>
     </button>
-<div id="window-drag" title="Oinzi"></div><div class="window-controls"><button id="winMin" aria-label="최소화" title="최소화">&#x2500;</button><button id="winMax" aria-label="최대화 / 이전 크기" title="최대화 / 이전 크기">&#x25a1;</button><button id="winClose" aria-label="닫기" title="닫기">&#x2715;</button></div></header>
+    <div id="window-drag" title="Oinzi"></div>
+    <div class="window-controls">
+      <button id="winMin" aria-label="최소화" title="최소화">&#xE921;</button>
+      <button id="winMax" aria-label="최대화" title="최대화">&#xE922;</button>
+      <button id="winClose" aria-label="닫기" title="닫기">&#xE8BB;</button>
+    </div>
+  </header>
 <div id="app">
   <aside id="sidebar">
     <div id="exts" hidden></div>
@@ -3379,24 +3386,76 @@ function renderLive() {
 }
 setInterval(renderLive, 1000);
 
-// Slash commands: the panel handles its own, everything else (skills, custom commands) goes to the CLI as typed.
-const SLASH = [
+const PANEL_COMMANDS = [
   { name: '/new', hint: '새 대화', run: () => send('ai.reset', { engine: ai.engine }) },
+  { name: '/clear', hint: '새 대화로 컨텍스트 초기화', run: () => send('ai.reset', { engine: ai.engine }) },
+  { name: '/resume', hint: '저장된 대화 열기', run: () => $('#aiHistory').click() },
   { name: '/stop', hint: '진행 중인 작업 중지', run: () => send('ai.stop', { engine: ai.engine }) },
-  { name: '/model', hint: '모델 바꾸기 (예: /model sonnet)', run: arg => send('ai.setting', { engine: ai.engine, name: 'model', value: arg }) },
-  { name: '/effort', hint: '추론 수준 (low · medium · high …)', run: arg => send('ai.setting', { engine: ai.engine, name: 'effort', value: arg }) },
-  { name: '/mode', hint: '권한 (restricted · plan · readonly · full)', run: arg => send('ai.setting', { engine: ai.engine, name: 'mode', value: arg || 'restricted' }) },
+  { name: '/model', hint: '모델 선택', run: arg => arg ? send('ai.setting', { engine: ai.engine, name: 'model', value: arg === 'default' ? '' : arg }) : $('#aiModelBtn').click() },
+  { name: '/effort', hint: '추론 수준 선택', run: arg => {
+    if (!arg) { $('#aiEffortBtn').click(); return; }
+    if (ai.engine === 'claude' && /^(status|ultracode)(?:\s|$)/.test(arg)) return false;
+    send('ai.setting', { engine: ai.engine, name: 'effort', value: /^(auto|default)$/.test(arg) ? '' : arg });
+  } },
+  { name: '/permissions', hint: '권한 선택', run: () => $('#aiPerm').click() },
+  { name: '/mode', hint: '권한 선택', run: arg => arg ? send('ai.setting', { engine: ai.engine, name: 'mode', value: arg }) : $('#aiPerm').click() },
   { name: '/folder', hint: '작업 폴더 고르기', run: () => send('ai.pickFolder', { engine: ai.engine }) },
-  { name: '/compact', hint: '대화 압축 (CLI에 전달)', cli: true },
+  { name: '/terminal', hint: '이 대화를 엔진의 터미널에서 열기', run: () => send('ai.terminal', { engine: ai.engine }) },
+];
+const ENGINE_COMMANDS = {
+  codex: [
+    { name: '/goal', hint: 'GOAL 조회 또는 설정' },
+    { name: '/usage', hint: '계정 사용량과 초기화 시간' },
+    { name: '/status', hint: '현재 Codex 세션 정보' },
+    { name: '/compact', hint: '대화 압축' },
+    { name: '/review', hint: '코드 리뷰', arguments: '[리뷰 요청]' },
+    { name: '/rename', hint: '대화 이름 변경', arguments: '<이름>' },
+    { name: '/skills', hint: '이 작업 폴더의 Codex 스킬' },
+    { name: '/plan', hint: '계획 모드 전환 또는 계획 요청',
+      run: arg => !arg && (send('ai.setting', { engine: ai.engine, name: 'planMode', value: '' }), true) },
+  ],
+  claude: [
+    { name: '/compact', hint: '대화 압축', arguments: '[요약 지침]' },
+    { name: '/usage', hint: 'Claude Code 사용량' },
+    { name: '/context', hint: '컨텍스트 사용 내역' },
+  ],
+};
+const GOAL_COMMANDS = [
+  { name: '/goal resume', hint: '이 대화의 GOAL 재개' },
+  { name: '/goal pause', hint: 'GOAL 일시 정지' },
+  { name: '/goal edit', hint: 'GOAL 목표 수정', arguments: '<새 목표>' },
+  { name: '/goal clear', hint: 'GOAL 제거' },
 ];
 const slashMenu = $('#slashMenu');
 let slashSel = 0;
+let slashRequest = 0;
+let slashCatalog = { engine: '', commands: [] };
+let slashDismissed = false;
+let editingSlash = false;
+function loadSlashCatalog() {
+  slashCatalog = { engine: ai.engine, commands: [] };
+  send('ai.commands', { engine: ai.engine, request: String(++slashRequest) });
+}
+function slashCommands() {
+  const commands = [...ENGINE_COMMANDS[ai.engine], ...PANEL_COMMANDS];
+  if (slashCatalog.engine === ai.engine) {
+    const seen = new Set(commands.map(command => command.name));
+    commands.push(...slashCatalog.commands.filter(command => !seen.has(command.name)));
+  }
+  return commands;
+}
 function slashMatches() {
   const text = aiInput.value;
-  if (!text.startsWith('/') || /\s/.test(text)) return [];
-  return SLASH.filter(command => command.name.startsWith(text.toLowerCase()));
+  if (slashDismissed || !text.startsWith('/')) return [];
+  const prefix = text.toLowerCase();
+  if (ai.engine === 'codex' && /^\/goal +\S*$/.test(prefix)) {
+    const goal = prefix.replace(/^\/goal +/, '/goal ');
+    return GOAL_COMMANDS.filter(command => command.name.startsWith(goal));
+  }
+  if (/\s/.test(text)) return [];
+  return slashCommands().filter(command => command.name.startsWith(prefix));
 }
-function renderSlash() {
+function renderSlash(scroll = false) {
   const matches = slashMatches();
   slashMenu.hidden = !matches.length;
   slashSel = Math.min(slashSel, Math.max(0, matches.length - 1));
@@ -3405,22 +3464,28 @@ function renderSlash() {
     row.className = index === slashSel ? 'sel' : '';
     const name = document.createElement('b');
     name.textContent = command.name;
-    row.append(name, command.hint);
+    const hint = document.createElement('span');
+    hint.textContent = command.hint;
+    hint.title = [command.hint, command.arguments].filter(Boolean).join(' ');
+    row.setAttribute('role', 'option');
+    row.setAttribute('aria-selected', index === slashSel);
+    row.append(name, hint);
     row.addEventListener('mousedown', event => { event.preventDefault(); completeSlash(command); });
     return row;
   }));
+  if (scroll) slashMenu.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
 }
 function completeSlash(command) {
-  aiInput.value = command.name + (['/model', '/effort', '/mode'].includes(command.name) ? ' ' : '');
+  aiInput.value = command.name + (command.arguments ? ' ' : '');
+  ai.drafts[ai.engine] = aiInput.value;
+  slashSel = 0;
   renderSlash();
   aiInput.focus();
 }
-// Returns true when the panel handled the text itself.
 function runSlash(text) {
-  const [name, ...rest] = text.trim().split(/\s+/);
-  const command = SLASH.find(item => item.name === name.toLowerCase());
-  if (!command || command.cli) return false;
-  command.run(rest.join(' '));
+  const [, name, args = ''] = text.match(/^(\S+)(?:\s+([\s\S]*))?$/) ?? [];
+  const command = slashCommands().find(item => item.name === name?.toLowerCase());
+  if (!command?.run || command.run(args) === false) return false;
   return true;
 }
 
@@ -3434,16 +3499,20 @@ function renderContext() {
 function sendPrompt(text) {
   text = text.trim();
   if ((!text && !ai.images[ai.engine].length) || ai.uploading) return;
-  const slash = text.startsWith('/');
+  const slash = /^\/[\p{L}\p{N}_][\p{L}\p{N}_:.-]*(?:\s|$)/u.test(text);
+  editingSlash = false;
   if (slash && runSlash(text)) {
     aiInput.value = '';
+    ai.drafts[ai.engine] = '';
     autosize();
     renderSlash();
     renderAiChrome();
     return;
   }
-  ai.status[ai.engine] = { ...ai.status[ai.engine], running: true };
-  setTyping(ai.engine, true);
+  if (!slash) {
+    ai.status[ai.engine] = { ...ai.status[ai.engine], running: true };
+    setTyping(ai.engine, true);
+  }
   send('ai.send', { engine: ai.engine, text, context: ai.context && !slash, picked: !slash && ai.picked[ai.engine] ? JSON.stringify(ai.picked[ai.engine]) : '' });
   if (!slash) { ai.picked[ai.engine] = null; renderPicked(); }
   slashMenu.hidden = true;
@@ -3475,6 +3544,11 @@ document.querySelectorAll('.seg button').forEach(button => button.addEventListen
       ? { source, target, id: ai.history[source].selected } : null;
     ai.engine = target;
     aiInput.value = ai.drafts[target];
+    editingSlash = /^\/\S*$/.test(aiInput.value);
+    slashDismissed = false;
+    slashSel = 0;
+    if (aiInput.value.startsWith('/')) loadSlashCatalog();
+    renderSlash();
     autosize();
     renderImageDrafts();
   }
@@ -3486,22 +3560,33 @@ $('#handoffGo').addEventListener('click', () => {
 });
 $('#handoffDismiss').addEventListener('click', () => { ai.handoff = null; renderAiChrome(); });
 $('#resumeWork').addEventListener('click', () => sendPrompt('현재 브라우저와 임시저장 상태부터 확인하고, 중단된 작업을 이어서 진행해줘. 이미 완료한 작업은 중복 실행하지 마.'));
-aiInput.addEventListener('input', () => { autosize(); renderAiChrome(); renderSlash(); });
+aiInput.addEventListener('input', () => {
+  const prefix = /^\/\S*$/.test(aiInput.value);
+  if (prefix && !editingSlash) loadSlashCatalog();
+  editingSlash = prefix;
+  slashDismissed = false;
+  slashSel = 0;
+  autosize(); renderAiChrome(); renderSlash();
+});
 aiInput.addEventListener('keydown', event => {
+  if (event.isComposing) return;
   const matches = slashMenu.hidden ? [] : slashMatches();
   if (matches.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
     event.preventDefault();
     slashSel = (slashSel + (event.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length;
-    renderSlash();
+    renderSlash(true);
   } else if (matches.length && event.key === 'Tab') {
     event.preventDefault();
     completeSlash(matches[slashSel]);
   } else if (matches.length && event.key === 'Escape') {
+    event.preventDefault();
+    slashDismissed = true;
     slashMenu.hidden = true;
   } else if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     // Enter on a half-typed command picks it from the menu first.
-    if (matches.length && aiInput.value !== matches[slashSel].name) completeSlash(matches[slashSel]);
+    if (matches.length && !matches.some(command => aiInput.value.toLowerCase() === command.name)) completeSlash(matches[slashSel]);
+    else if (slashSel > 0 && matches.length && aiInput.value.toLowerCase() !== matches[slashSel].name) completeSlash(matches[slashSel]);
     else sendPrompt(aiInput.value);
   }
 });
@@ -3786,7 +3871,8 @@ $('#tabSearch').addEventListener('click', () => send('palette', { mode: 'tabs' }
 tabsEl.addEventListener('scroll', () => { lastIndicator = ''; placeIndicator(); });
 
 $('#winMin').addEventListener('click', () => send('window.minimize'));
-$('#winMax').addEventListener('click', () => send('window.maximize'));
+const winMax = $('#winMax');
+winMax.addEventListener('click', () => send('window.maximize'));
 $('#winClose').addEventListener('click', () => send('window.close'));
 $('#windowbar').addEventListener('mousedown', event => {
   if (event.button === 0 && !event.target.closest('button, input, a')) send('window.drag');
@@ -3835,7 +3921,11 @@ matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', (
 
 webview?.addEventListener('message', event => {
   const message = event.data;
-  if (message.type === 'sidebar.prepare') {
+  if (message.type === 'window.state') {
+    winMax.textContent = message.maximized ? '\uE923' : '\uE922';
+    winMax.title = message.maximized ? '이전 크기로 복원' : '최대화';
+    winMax.setAttribute('aria-label', winMax.title);
+  } else if (message.type === 'sidebar.prepare') {
     const shot = $('#sidebar-shot');
     shot.src = message.shot;
     shot.decode().then(() => { shot.hidden = false; send('sidebar.ready'); }, () => send('sidebar.ready'));
@@ -3871,13 +3961,22 @@ webview?.addEventListener('message', event => {
   } else if (message.type === 'ai.handoffReady') {
     ai.handoff = null;
     ai.engine = message.engine;
-    aiInput.value = ''; ai.drafts[ai.engine] = ''; autosize();
+    aiInput.value = ''; ai.drafts[ai.engine] = ''; editingSlash = false; renderSlash(); autosize();
     renderAiChrome(); aiInput.focus();
   } else if (message.type === 'ai.history') {
     ai.history[message.engine] = message; renderAiChrome();
   } else if (message.type === 'ai.settings') {
+    const previous = ai.settings[message.engine];
     ai.settings[message.engine] = message;
-    if (message.engine === ai.engine) renderSettings();
+    if (message.engine === ai.engine) {
+      renderSettings();
+      if (previous && previous.cwd !== message.cwd && aiInput.value.startsWith('/')) loadSlashCatalog();
+    }
+  } else if (message.type === 'ai.commands') {
+    if (message.engine === ai.engine && message.request === String(slashRequest)) {
+      slashCatalog = message;
+      renderSlash();
+    }
   } else if (message.type === 'ai.restore') {
     ai.interrupted[message.engine] = !!message.interrupted;
     resetLog(message.engine);

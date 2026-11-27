@@ -50,6 +50,10 @@ public sealed partial class BrowserForm
             case "effort" when value.Length == 0 || (engine == "claude" ? ClaudeEfforts : CodexEfforts).Contains(value):
                 chat.Effort = value.Length == 0 ? null : value; break;
             case "mode" when EngineModes[engine].Contains(value): chat.Mode = value == "restricted" ? null : value; break;
+            case "planMode" when engine == "codex":
+                chat.PlanMode = !chat.PlanMode;
+                PostAssistant(chat, new { kind = "note", text = chat.PlanMode ? "Codex 계획 모드를 켰습니다." : "Codex 계획 모드를 껐습니다." });
+                break;
             case "cwd": SetFolder(chat, value.Length == 0 ? null : value); break;
             default: return;
         }

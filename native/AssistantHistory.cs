@@ -22,6 +22,7 @@ public sealed partial class BrowserForm
         public string? Model { get; set; }
         public string? Effort { get; set; }
         public string? Mode { get; set; }
+        public bool PlanMode { get; set; }
         public string? Cwd { get; set; }
         // Folder the Claude session was created in; null means the old internal workspace default.
         public string? SessionCwd { get; set; }
@@ -75,7 +76,7 @@ public sealed partial class BrowserForm
         var chat = new Conversation
         {
             Engine = engine, Selected = true, Model = template?.Model, Effort = template?.Effort,
-            Mode = template?.Mode == "full" ? null : template?.Mode, Cwd = template?.Cwd
+            Mode = template?.Mode == "full" ? null : template?.Mode, Cwd = template?.Cwd, PlanMode = template?.PlanMode ?? false
         };
         conversations.Add(chat);
         return chat;
@@ -89,7 +90,7 @@ public sealed partial class BrowserForm
     private Conversation[] HistorySnapshot() => conversations.Select(c => new Conversation
     { Id = c.Id, Engine = c.Engine, Title = c.Title, Session = c.Session, NeedsContext = c.NeedsContext,
         Running = c.Running, Interrupted = c.Interrupted, Selected = c.Selected, BrowserRuntime = c.BrowserRuntime, Space = c.Space,
-        Model = c.Model, Effort = c.Effort, Mode = c.Mode, Cwd = c.Cwd, SessionCwd = c.SessionCwd, SessionAccount = c.SessionAccount, Updated = c.Updated,
+        Model = c.Model, Effort = c.Effort, Mode = c.Mode, PlanMode = c.PlanMode, Cwd = c.Cwd, SessionCwd = c.SessionCwd, SessionAccount = c.SessionAccount, Updated = c.Updated,
         Pending = c.Pending.ToList(), Events = c.Events.ToList() }).ToArray();
 
     private static string SpaceOf(Conversation chat) => chat.Space ??= chat.Id;
@@ -165,7 +166,7 @@ public sealed partial class BrowserForm
 
     private void DeleteConversation(string engine, string id)
     {
-        if (conversations.FirstOrDefault(c => c.Engine == engine && c.Id == id) is not { } chat || aiRuns.ContainsKey(chat.Id)) return;
+        if (conversations.FirstOrDefault(c => c.Engine == engine && c.Id == id) is not { } chat || aiRuns.ContainsKey(chat.Id) || assistantTerminals.Contains(chat.Id)) return;
         conversations.Remove(chat);
         SaveAssistantHistory();
         if (currentConversations.GetValueOrDefault(engine) == chat)

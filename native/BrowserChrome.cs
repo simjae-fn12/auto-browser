@@ -14,6 +14,7 @@ public sealed partial class BrowserForm
     private readonly Panel viewport = new() { BackColor = Color.White };
     private readonly Stack<(string Url, string Profile)> closedTabs = new();
     private bool chromeReady;
+    private bool? chromeMaximized;
     private bool statePending;
     private bool sidebarCollapsed;
     private bool sidebarTarget;
@@ -26,8 +27,8 @@ public sealed partial class BrowserForm
     {
         FormBorderStyle = FormBorderStyle.None;
         Padding = new Padding(5);
-        MaximizedBounds = Screen.FromControl(this).WorkingArea;
-        LocationChanged += (_, _) => MaximizedBounds = Screen.FromControl(this).WorkingArea;
+        UpdateMaximizedBounds();
+        LocationChanged += (_, _) => UpdateMaximizedBounds();
         Font = new Font("Segoe UI", 10);
         StartPosition = FormStartPosition.CenterScreen;
         using (var icon = typeof(BrowserForm).Assembly.GetManifestResourceStream("oinzi.ico"))
@@ -42,6 +43,7 @@ public sealed partial class BrowserForm
         Controls.Add(viewport);
         Controls.Add(chromeView);
         viewport.BringToFront();
+        Resize += (_, _) => PostWindowState();
         HandleCreated += (_, _) => ApplyWindowTheme(BackColor, dark ? Color.FromArgb(231, 236, 229) : Color.FromArgb(29, 34, 31), dark);
     }
 
@@ -89,6 +91,8 @@ public sealed partial class BrowserForm
         {
             case "ready":
                 chromeReady = true; RefreshSidebar(); PostAssistantStatus(); LoadAssistantHistory();
+                chromeMaximized = null;
+                PostWindowState();
                 PostChrome(new { type = "settings.prefs", prefs = PrefsMessage() });
                 PostAccountUsage("claude"); PostAccountUsage("codex");
                 PostChrome(ProfilesMessage());
@@ -96,6 +100,8 @@ public sealed partial class BrowserForm
                 _ = PostToolbarExtensionsAsync();
                 break;
             case "ai.send": SubmitAssistant(Read(message, "engine"), Read(message, "text"), Read(message, "context") == "True", Read(message, "picked")); break;
+            case "ai.commands": _ = PostSlashCatalogAsync(Read(message, "engine"), Read(message, "request")); break;
+            case "ai.terminal": _ = OpenAssistantTerminalAsync(Read(message, "engine")); break;
             case "ai.pick": _ = PickElementAsync(Read(message, "engine")); break;
             case "ai.queueRemove": RemoveQueuedPrompt(Read(message, "engine"), Read(message, "id")); break;
             case "ai.queueRun": if (currentConversations.GetValueOrDefault(Read(message, "engine")) is { } queued) RunNextPrompt(queued); break;
@@ -350,10 +356,27 @@ public sealed partial class BrowserForm
         DwmSetWindowAttribute(Handle, 36, ref text, sizeof(int));     // DWMWA_TEXT_COLOR
     }
 
+    private void UpdateMaximizedBounds()
+    {
+        var screen = Screen.FromControl(this);
+        var workArea = screen.WorkingArea;
+        // Windows adds the monitor's desktop position when maximizing the window.
+        workArea.Offset(-screen.Bounds.X, -screen.Bounds.Y);
+        MaximizedBounds = workArea;
+    }
+
     private void ToggleWindowMaximize()
     {
-        MaximizedBounds = Screen.FromControl(this).WorkingArea;
+        UpdateMaximizedBounds();
         WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
+    }
+
+    private void PostWindowState()
+    {
+        var maximized = WindowState == FormWindowState.Maximized;
+        if (!chromeReady || chromeMaximized == maximized) return;
+        chromeMaximized = maximized;
+        PostChrome(new { type = "window.state", maximized });
     }
 
     protected override void WndProc(ref Message message)

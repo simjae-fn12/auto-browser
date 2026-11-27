@@ -22,6 +22,7 @@ public sealed partial class BrowserForm
         // Adds a message to the turn in progress; false once the CLI can no longer take one.
         public Func<string, AttachedImage[], bool> Steer { get; set; } = (_, _) => false;
         public bool Finished { get; set; }
+        public Func<string, bool> Command { get; set; } = _ => false;
         // The CLI session was created by this run; if the run fails, the CLI may never have saved it.
         public bool NewSession { get; set; }
         public Queue<string> Errors { get; } = new();
@@ -191,8 +192,8 @@ public sealed partial class BrowserForm
             PostAssistantStatus();
             return;
         }
-        // A slash command such as /compact goes to the CLI exactly as typed, without context in front of it.
-        var command = text.TrimStart().StartsWith('/');
+        // Both engines need the slash command at the beginning of the input.
+        var command = ParseSlash(text) != null;
         var prompt = command ? text.Trim() : submittedContext + (string.IsNullOrWhiteSpace(text) ? "첨부한 사진을 살펴봐 주세요." : text.Trim());
         var workspace = PrepareAssistantWorkspace(engine);
         // Scripts get a folder per conversation so concurrent conversations never overwrite each other's steps.
@@ -205,14 +206,18 @@ public sealed partial class BrowserForm
             PostAssistantStatus();
             return;
         }
-        var cwd = chat.Cwd is { Length: > 0 } folder && Directory.Exists(folder) ? folder
-            : Directory.Exists(AiWorkDir) ? AiWorkDir : workspace;
+        var cwd = AssistantWorkingDirectory(chat, workspace);
         // Claude keeps sessions per folder, so a session started elsewhere (including the old default) continues from its transcript.
         if (chat.Engine == "claude" && chat.Session != null && !string.Equals(chat.SessionCwd ?? workspace, cwd, StringComparison.OrdinalIgnoreCase))
         { chat.Session = null; chat.NeedsContext = true; }
         chat.SessionCwd = cwd;
         // Sessions are stored in the account's config folder, so after switching accounts the conversation continues from its transcript.
         var account = ActiveAccountId(engine) is var active && active == DefaultAccount ? null : active;
+        if (command && engine == "codex" && chat.Session != null && chat.SessionAccount != account)
+        {
+            PostAssistant(chat, new { kind = "error", text = "이 대화에서 사용한 Codex 계정으로 전환한 뒤 명령을 실행해 주세요." });
+            return;
+        }
         if (chat.Session != null && chat.SessionAccount != account) { chat.Session = null; chat.NeedsContext = true; }
         chat.SessionAccount = account;
         if (cwd == AiWorkDir) InstallSkills(AiWorkDir);
@@ -229,13 +234,7 @@ public sealed partial class BrowserForm
             prompt += "\n\n[Attached images, in order]\n" + string.Join("\n", images.Select(image => image.Name + ": " + ImagePath(image)));
         PostAssistant(chat, new { kind = "user", text, images = attachments });
 
-        var info = new ProcessStartInfo(exe)
-        {
-            WorkingDirectory = cwd,
-            UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
-            StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
-        };
+        var info = AssistantProtocolProcess(exe, cwd);
         IsolateAssistantEnvironment(info);
         ApplyAccount(info, engine);
         if (connectionFile != null) info.Environment["OINZI_CONNECTION"] = connectionFile;
@@ -291,6 +290,12 @@ public sealed partial class BrowserForm
                 run.NewSession |= chat.Session == null;
                 chat.Session = data["id"]!.GetValue<string>();
                 SaveAssistantHistory();
+                return;
+            case "persisted":
+                run.NewSession = false;
+                return;
+            case "rename":
+                RenameAssistantChat(chat, data["text"]!.GetValue<string>());
                 return;
             case "done":
                 run.Finished = true;
@@ -412,6 +417,7 @@ public sealed partial class BrowserForm
             }
         }
         run.Steer = (text, attached) => Write(ClaudeInput(text, attached));
+        var slash = ParseSlash(prompt) != null;
         _ = Task.Run(() =>
         {
             if (Write(first)) return;
@@ -420,6 +426,7 @@ public sealed partial class BrowserForm
         });
         var reader = Task.Run(async () =>
         {
+            var receivedText = false;
             while (await process.StandardOutput.ReadLineAsync() is { } line)
             {
                 JsonObject? message;
@@ -429,6 +436,7 @@ public sealed partial class BrowserForm
                 if (message["type"]?.ToString() == "user" && message["isReplay"]?.GetValue<bool>() == true) { lock (gate) replayed++; continue; }
                 foreach (var item in ParseClaude(message))
                 {
+                    if (item["kind"]?.ToString() == "text") receivedText = true;
                     if (item["kind"]?.ToString() == "done")
                     {
                         // A message sent mid-run that Claude has not taken in yet starts another turn in this process.
@@ -438,6 +446,12 @@ public sealed partial class BrowserForm
                             closed = true;
                             try { process.StandardInput.Close(); } catch (IOException) { }
                         }
+                        // Local commands can return only a result, with no assistant message to render.
+                        if (slash && !receivedText && item["error"] == null &&
+                            message["result"]?.ToString() is { Length: > 0 } result)
+                            Emit(run, new JsonObject { ["kind"] = "note", ["text"] =
+                                result.Contains("isn't available in this environment", StringComparison.Ordinal)
+                                    ? result + "\n/terminal로 같은 Claude 세션을 열 수 있습니다." : result });
                     }
                     Emit(run, item);
                 }
@@ -555,14 +569,14 @@ public sealed partial class BrowserForm
         return input;
     }
 
-    private JsonObject CodexSandbox(Conversation chat, string scripts) => chat.Mode switch
+    private JsonObject CodexSandbox(Conversation chat, string scripts, string workingDirectory) => chat.Mode switch
     {
         "full" => new JsonObject { ["type"] = "dangerFullAccess" },
         "readonly" => new JsonObject { ["type"] = "readOnly", ["networkAccess"] = true },
         // agent.mjs talks to the browser over localhost, so even the restricted mode needs network access.
         _ => new JsonObject
         {
-            ["type"] = "workspaceWrite", ["writableRoots"] = new JsonArray(scripts), ["networkAccess"] = true,
+            ["type"] = "workspaceWrite", ["writableRoots"] = new JsonArray(scripts, workingDirectory), ["networkAccess"] = true,
             ["excludeTmpdirEnvVar"] = false, ["excludeSlashTmp"] = false
         }
     };
@@ -570,6 +584,14 @@ public sealed partial class BrowserForm
     private bool StartCodex(Conversation chat, ProcessStartInfo info, string prompt, AttachedImage[] images, string instructions, string scripts)
     {
         AddCodexDaemonFlag(info);
+        var sandbox = CodexSandbox(chat, scripts, info.WorkingDirectory);
+        if (sandbox["type"]?.ToString() == "workspaceWrite")
+        {
+            info.ArgumentList.Add("-c");
+            info.ArgumentList.Add("sandbox_workspace_write.network_access=true");
+            info.ArgumentList.Add("-c");
+            info.ArgumentList.Add("sandbox_workspace_write.writable_roots=" + sandbox["writableRoots"]!.ToJsonString());
+        }
         info.ArgumentList.Add("app-server");
         if (Launch(chat, info) is not { } run) return false;
         var process = run.Process;
@@ -577,8 +599,16 @@ public sealed partial class BrowserForm
         var nextId = 0;
         var replies = new Dictionary<int, TaskCompletionSource<JsonNode?>>();
         string? threadId = null, turnId = null;
-        var sandbox = CodexSandbox(chat, scripts);
-        var (model, effort, session) = (chat.Model, chat.Effort, chat.Session);
+        var (model, effort, session, planMode) = (chat.Model, chat.Effort, chat.Session, chat.PlanMode);
+        var slash = ParseSlash(prompt);
+        string? goalStatus = null;
+        var initialized = false;
+        var ready = false;
+        var closing = false;
+        var commandsInFlight = 0;
+        var activity = 0;
+        var goalRevision = 0;
+        JsonObject? completion = null;
 
         void Send(JsonObject message)
         {
@@ -588,26 +618,182 @@ public sealed partial class BrowserForm
                 catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException) { }
             }
         }
-        Task<JsonNode?> Request(string method, JsonObject parameters)
+        async Task<JsonNode> Request(string method, JsonObject parameters)
         {
             var reply = new TaskCompletionSource<JsonNode?>(TaskCreationOptions.RunContinuationsAsynchronously);
             int id;
             lock (gate) { id = ++nextId; replies[id] = reply; }
-            Send(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id, ["method"] = method, ["params"] = parameters });
-            return reply.Task;
+            Send(CodexRequest(id, method, parameters));
+            try
+            {
+                var response = await reply.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                if (response == null) throw new InvalidOperationException("Codex 연결이 종료됐습니다.");
+                if (response["error"] is { } error)
+                    throw new InvalidOperationException(error["message"]?.ToString() ?? error.ToJsonString());
+                return response["result"] ?? new JsonObject();
+            }
+            finally { lock (gate) replies.Remove(id); }
         }
-        static string? Failure(JsonNode? reply) => reply?["error"]?["message"]?.ToString() ?? (reply?["error"] != null ? reply["error"]!.ToJsonString() : null);
+
+        void Note(string text, bool error = false) =>
+            Emit(run, new JsonObject { ["kind"] = error ? "error" : "note", ["text"] = text });
+
+        static bool ProtocolError(Exception ex) => ex is IOException or InvalidOperationException or JsonException or TimeoutException;
+
+        void End(JsonObject done)
+        {
+            Emit(run, done);
+            try { process.StandardInput.Close(); } catch (Exception ex) when (ProtocolError(ex)) { }
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(2000);
+                Kill(process);
+            });
+        }
+
+        void FinishWhenIdle(int delay = 400)
+        {
+            int stamp;
+            lock (gate)
+            {
+                if (closing || !ready || commandsInFlight != 0 || turnId != null || completion == null) return;
+                stamp = ++activity;
+            }
+            _ = Task.Run(async () =>
+            {
+                // Codex can start a continuation after reporting that the previous turn finished.
+                await Task.Delay(delay);
+                JsonObject done;
+                lock (gate)
+                {
+                    if (closing || stamp != activity || commandsInFlight != 0 || turnId != null || completion == null) return;
+                    if (goalStatus == "active")
+                    {
+                        // Only the app-server decides when the goal can start another turn.
+                        Emit(run, new JsonObject { ["kind"] = "status", ["text"] = "GOAL 활성 · Codex의 다음 턴 대기 중" });
+                        return;
+                    }
+                    closing = true;
+                    done = completion;
+                }
+                End(done);
+            });
+        }
+
+        JsonObject ThreadParameters() => new() { ["threadId"] = threadId ?? session };
+
+        void RememberGoal(JsonNode? goal, int revision)
+        {
+            lock (gate)
+                if (goalRevision == revision) goalStatus = goal?["status"]?.ToString();
+        }
+
+        async Task<JsonNode?> GoalCommand(string arguments)
+        {
+            if (threadId == null && session == null)
+            {
+                Note(CodexGoalSummary(null));
+                return null;
+            }
+            int revision;
+            lock (gate) revision = goalRevision;
+            var goal = (await Request("thread/goal/get", ThreadParameters()))["goal"];
+            // An unloaded conversation can be inspected without starting its active goal.
+            if (threadId != null) RememberGoal(goal, revision);
+            var action = arguments.Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries);
+            var verb = action.FirstOrDefault()?.ToLowerInvariant();
+            if (verb == null) { Note(CodexGoalSummary(goal)); return goal; }
+            if (verb is "clear" or "pause" or "resume" && action.Length > 1)
+            {
+                Note($"사용법 /goal {verb}");
+                return goal;
+            }
+            if (verb == "clear" && action.Length == 1)
+            {
+                var reply = await Request("thread/goal/clear", ThreadParameters());
+                RememberGoal(null, revision);
+                Note(reply["cleared"]?.GetValue<bool>() == true ? "GOAL을 지웠습니다." : CodexGoalSummary(null));
+                return null;
+            }
+            var parameters = ThreadParameters();
+            parameters["origin"] = "user";
+            if (verb is "pause" or "resume" && action.Length == 1)
+            {
+                if (goal == null) { Note(CodexGoalSummary(null)); return null; }
+                parameters["status"] = verb == "pause" ? "paused" : "active";
+            }
+            else
+            {
+                if (verb == "edit" && action.Length == 1) { Note(CodexGoalSummary(goal) + "\n/goal edit <새 목표>"); return goal; }
+                if (verb != "edit" && goal?["status"]?.ToString() is { } status && status != "complete")
+                {
+                    Note(CodexGoalSummary(goal) + "\n목표를 바꾸려면 /goal edit <새 목표>를 사용하세요.");
+                    return goal;
+                }
+                parameters["objective"] = verb == "edit" ? action[1] : arguments;
+                if (verb != "edit") parameters["status"] = "active";
+            }
+            lock (gate) revision = goalRevision;
+            var result = (await Request("thread/goal/set", parameters))["goal"];
+            if (threadId != null) RememberGoal(result, revision);
+            if (result != null) Emit(run, new JsonObject { ["kind"] = "persisted" });
+            Note(CodexGoalSummary(result));
+            return result;
+        }
+
+        async Task ShowUsage()
+        {
+            var result = await Request("account/rateLimits/read", new JsonObject());
+            foreach (var item in ParseCodex("account/rateLimits/updated", result.AsObject())) Emit(run, item);
+            Note(CodexUsageSummary(result));
+        }
+
+        run.Command = text =>
+        {
+            if (ParseSlash(text) is not { } command) return false;
+            var name = command.Name.ToLowerInvariant();
+            if (name is not ("goal" or "usage")) return false;
+            lock (gate)
+            {
+                if (!initialized || !ready || closing || (name == "goal" && threadId == null)) return false;
+                if (commandsInFlight != 0)
+                {
+                    Note("이전 명령이 끝난 뒤 다시 실행해 주세요.");
+                    return true;
+                }
+                commandsInFlight++;
+            }
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (name == "goal") await GoalCommand(command.Arguments);
+                    else await ShowUsage();
+                }
+                catch (Exception ex) when (ProtocolError(ex)) { Note("명령을 실행하지 못했습니다. " + Clip(ex.Message, 600), true); }
+                finally
+                {
+                    lock (gate) commandsInFlight--;
+                    FinishWhenIdle();
+                }
+            });
+            return true;
+        };
 
         run.Steer = (text, attached) =>
         {
-            if (threadId == null || turnId == null || run.Finished) return false;
-            _ = Request("turn/steer", new JsonObject
+            string? target;
+            lock (gate) target = closing ? null : turnId;
+            if (threadId == null || target == null || run.Finished) return false;
+            _ = Task.Run(async () =>
             {
-                ["threadId"] = threadId, ["expectedTurnId"] = turnId, ["input"] = CodexInput(text, attached, ImagePath)
-            }).ContinueWith(task =>
-            {
-                if (Failure(task.Result) is { } error) Emit(run, new JsonObject { ["kind"] = "note", ["text"] = "추가 지시를 전달하지 못했습니다: " + Clip(error, 300) });
-            }, TaskScheduler.Default);
+                try
+                {
+                    await Request("turn/steer", new JsonObject
+                    { ["threadId"] = threadId, ["expectedTurnId"] = target, ["input"] = CodexInput(text, attached, ImagePath) });
+                }
+                catch (Exception ex) when (ProtocolError(ex)) { Note("추가 지시를 전달하지 못했습니다. " + Clip(ex.Message, 300), true); }
+            });
             return true;
         };
 
@@ -620,10 +806,10 @@ public sealed partial class BrowserForm
                 catch (JsonException) { continue; }
                 if (message == null) continue;
                 var method = message["method"]?.ToString();
-                if (message["id"] is { } id && method == null)
+                if (message["id"] is JsonValue id && method == null && id.TryGetValue<int>(out var number))
                 {
                     TaskCompletionSource<JsonNode?>? reply;
-                    lock (gate) replies.Remove(id.GetValue<int>(), out reply);
+                    lock (gate) replies.Remove(number, out reply);
                     reply?.TrySetResult(message);
                     continue;
                 }
@@ -634,61 +820,188 @@ public sealed partial class BrowserForm
                     continue;
                 }
                 var parameters = message["params"] as JsonObject ?? new JsonObject();
-                if (method == "turn/started") turnId = parameters["turn"]?["id"]?.ToString() ?? turnId;
+                if (parameters["threadId"]?.ToString() is { } eventThread && threadId != null && eventThread != threadId) continue;
+                if (method == "turn/started")
+                {
+                    lock (gate)
+                    {
+                        turnId = parameters["turn"]?["id"]?.ToString();
+                        completion = null;
+                        activity++;
+                    }
+                    Emit(run, new JsonObject { ["kind"] = "status", ["text"] = "작업 중" });
+                }
+                if (method == "thread/goal/updated" && parameters["goal"] is { } newGoal)
+                {
+                    Emit(run, new JsonObject { ["kind"] = "persisted" });
+                    var status = newGoal["status"]?.ToString();
+                    string? previous;
+                    lock (gate) { previous = goalStatus; goalStatus = status; goalRevision++; }
+                    if (previous != status && status is "paused" or "blocked" or "budgetLimited" or "usageLimited" or "complete")
+                        Note(CodexGoalSummary(newGoal));
+                    if (threadId != null) FinishWhenIdle();
+                }
+                if (method == "thread/goal/cleared")
+                {
+                    lock (gate) { goalStatus = null; goalRevision++; }
+                    FinishWhenIdle();
+                }
                 foreach (var item in ParseCodex(method, parameters))
                 {
-                    Emit(run, item);
-                    if (item["kind"]?.ToString() == "done") Kill(process);
+                    if (item["kind"]?.ToString() != "done") { Emit(run, item); continue; }
+                    if (item["error"] == null) Emit(run, new JsonObject { ["kind"] = "persisted" });
+                    lock (gate)
+                    {
+                        turnId = null;
+                        completion = item;
+                    }
+                    FinishWhenIdle();
                 }
             }
+            lock (gate) foreach (var reply in replies.Values) reply.TrySetResult(null);
         });
 
         _ = Task.Run(async () =>
         {
             try
             {
-                if (Failure(await Request("initialize", new JsonObject
-                    { ["clientInfo"] = new JsonObject { ["name"] = "oinzi", ["title"] = "Oinzi", ["version"] = "1" }, ["capabilities"] = null })) is { } initError)
-                    throw new InvalidOperationException(initError);
-                Send(new JsonObject { ["jsonrpc"] = "2.0", ["method"] = "initialized" });
-                var thread = new JsonObject { ["cwd"] = info.WorkingDirectory, ["approvalPolicy"] = "never", ["developerInstructions"] = instructions };
+                await Request("initialize", CodexInitialize());
+                Send(JsonNode.Parse(CodexInitialized)!.AsObject());
+                lock (gate) initialized = true;
+                var name = slash?.Name.ToLowerInvariant();
+                var arguments = slash?.Arguments ?? "";
+                if (name == "usage") { await ShowUsage(); CompleteCommand(); return; }
+                if (name == "skills")
+                {
+                    var skills = CodexSkills(await Request("skills/list", new JsonObject { ["cwds"] = new JsonArray(info.WorkingDirectory) }));
+                    Note(skills.Length == 0 ? "이 작업 폴더에서 사용할 수 있는 Codex 스킬이 없습니다." :
+                        string.Join("\n", skills.Select(item => "/" + item.Name + "  " + item.Hint)));
+                    CompleteCommand();
+                    return;
+                }
+                if (name == "goal" && (arguments.Length == 0 || arguments.ToLowerInvariant() is "pause" or "clear"))
+                { await GoalCommand(arguments); CompleteCommand(); return; }
+                if (name == "goal" && arguments.Equals("resume", StringComparison.OrdinalIgnoreCase) && session == null)
+                { Note(CodexGoalSummary(null)); CompleteCommand(); return; }
+                if (session == null && name is "compact" or "status" or "rename")
+                {
+                    if (name == "rename" && arguments.Length > 0)
+                        Emit(run, new JsonObject { ["kind"] = "rename", ["text"] = arguments });
+                    else Note(name switch
+                    {
+                        "status" => $"아직 Codex 세션이 시작되지 않았습니다.\n작업 폴더 {info.WorkingDirectory}",
+                        "rename" => "사용법 /rename <대화 이름>",
+                        _ => "대화를 시작한 뒤 /compact를 실행해 주세요."
+                    });
+                    CompleteCommand();
+                    return;
+                }
+                SlashCommand? skill = null;
+                if (name is not (null or "goal" or "compact" or "review" or "rename" or "status" or "plan"))
+                {
+                    var skills = CodexSkills(await Request("skills/list", new JsonObject { ["cwds"] = new JsonArray(info.WorkingDirectory) }));
+                    var skillName = slash!.Value.Name;
+                    skill = skills.FirstOrDefault(item => item.Name.Equals(skillName, StringComparison.OrdinalIgnoreCase));
+                    if (skill == null)
+                    {
+                        Note($"/{skillName}은 Codex 터미널에서 확인해 주세요. /terminal로 같은 세션을 열 수 있습니다.");
+                        CompleteCommand();
+                        return;
+                    }
+                }
+                var thread = new JsonObject
+                {
+                    ["cwd"] = info.WorkingDirectory, ["approvalPolicy"] = "never", ["developerInstructions"] = instructions,
+                    ["sandbox"] = sandbox["type"]?.ToString() switch
+                    { "dangerFullAccess" => "danger-full-access", "readOnly" => "read-only", _ => "workspace-write" }
+                };
                 if (model is { Length: > 0 }) thread["model"] = model;
                 JsonNode? opened = null;
                 if (session != null)
                 {
                     var resume = (JsonObject)thread.DeepClone();
                     resume["threadId"] = session;
-                    opened = await Request("thread/resume", resume);
-                    if (Failure(opened) != null) opened = null;
+                    resume["excludeTurns"] = true;
+                    try { opened = await Request("thread/resume", resume); }
+                    catch (InvalidOperationException) when (slash == null) { }
                 }
                 opened ??= await Request("thread/start", thread);
-                if (Failure(opened) is { } threadError) throw new InvalidOperationException(threadError);
-                threadId = opened!["result"]?["thread"]?["id"]?.ToString() ?? throw new InvalidOperationException("Codex did not return a thread");
+                threadId = opened["thread"]?["id"]?.ToString() ?? throw new InvalidOperationException("Codex did not return a thread");
                 Emit(run, new JsonObject { ["kind"] = "session", ["id"] = threadId });
-                if (prompt.Trim() == "/compact")
+                switch (name)
                 {
-                    if (Failure(await Request("thread/compact/start", new JsonObject { ["threadId"] = threadId })) is { } compactError)
-                        throw new InvalidOperationException(compactError);
-                    return;
+                    case "goal":
+                        await GoalCommand(arguments);
+                        CompleteCommand(400);
+                        return;
+                    case "compact":
+                        if (arguments.Length > 0) throw new InvalidOperationException("Codex의 /compact는 인수 없이 실행합니다.");
+                        await Request("thread/compact/start", ThreadParameters());
+                        StartWaiting();
+                        return;
+                    case "review":
+                        var review = ThreadParameters();
+                        review["target"] = arguments.Length == 0 ? new JsonObject { ["type"] = "uncommittedChanges" } :
+                            new JsonObject { ["type"] = "custom", ["instructions"] = arguments };
+                        await Request("review/start", review);
+                        StartWaiting();
+                        return;
+                    case "rename":
+                        if (arguments.Length == 0) { Note("사용법 /rename <대화 이름>"); CompleteCommand(); return; }
+                        var rename = ThreadParameters();
+                        rename["name"] = arguments;
+                        await Request("thread/name/set", rename);
+                        Emit(run, new JsonObject { ["kind"] = "rename", ["text"] = arguments });
+                        CompleteCommand();
+                        return;
+                    case "status":
+                        Note($"Codex 세션 {threadId}\n모델 {opened["model"]}\n작업 폴더 {opened["cwd"]}\n권한 {thread["sandbox"]}");
+                        CompleteCommand();
+                        return;
                 }
+                var input = CodexInput(skill == null ? name == "plan" ? arguments : prompt
+                    : "$" + skill.Name + (arguments.Length == 0 ? "" : " " + arguments), images, ImagePath);
+                if (skill != null) input.Add(new JsonObject { ["type"] = "skill", ["name"] = skill.Name, ["path"] = skill.Path });
                 var turn = new JsonObject
                 {
-                    ["threadId"] = threadId, ["input"] = CodexInput(prompt, images, ImagePath), ["sandboxPolicy"] = sandbox, ["summary"] = "auto"
+                    ["threadId"] = threadId, ["input"] = input, ["sandboxPolicy"] = sandbox, ["summary"] = "auto"
                 };
                 if (model is { Length: > 0 }) turn["model"] = model;
                 if (effort is { Length: > 0 }) turn["effort"] = effort;
-                var started = await Request("turn/start", turn);
-                if (Failure(started) is { } turnError) throw new InvalidOperationException(turnError);
-                turnId ??= started!["result"]?["turn"]?["id"]?.ToString();
+                if (planMode || name == "plan" || opened["collaborationMode"]?["mode"]?.ToString() == "plan")
+                    turn["collaborationMode"] = new JsonObject
+                    {
+                        ["mode"] = planMode || name == "plan" ? "plan" : "default",
+                        ["settings"] = new JsonObject { ["model"] = model ?? opened["model"]?.ToString(),
+                            ["reasoning_effort"] = effort ?? opened["reasoningEffort"]?.ToString(), ["developer_instructions"] = null }
+                    };
+                await Request("turn/start", turn);
+                StartWaiting();
             }
-            catch (Exception ex) when (ex is InvalidOperationException or JsonException)
+            catch (Exception ex) when (ProtocolError(ex))
             {
-                Emit(run, new JsonObject { ["kind"] = "done", ["error"] = "Codex를 시작하지 못했습니다: " + Clip(ex.Message, 600) });
-                Kill(process);
+                lock (gate) closing = true;
+                End(new JsonObject { ["kind"] = "done", ["error"] = "Codex 요청 실패 · " + Clip(ex.Message, 600) });
             }
         });
         WatchExit(run, reader);
         return true;
+
+        void StartWaiting()
+        {
+            lock (gate) ready = true;
+            FinishWhenIdle();
+        }
+
+        void CompleteCommand(int delay = 0)
+        {
+            lock (gate)
+            {
+                ready = true;
+                if (turnId == null) completion ??= new JsonObject { ["kind"] = "done" };
+            }
+            FinishWhenIdle(delay);
+        }
     }
 
     private static IEnumerable<JsonObject> ParseCodex(string? method, JsonObject p)
@@ -729,8 +1042,11 @@ public sealed partial class BrowserForm
             case "item/completed":
                 switch (itemType)
                 {
-                    case "agentMessage":
+                    case "agentMessage" or "plan":
                         yield return new JsonObject { ["kind"] = "text", ["text"] = item!["text"]?.ToString() };
+                        break;
+                    case "exitedReviewMode":
+                        yield return new JsonObject { ["kind"] = "text", ["text"] = item!["review"]?.ToString() };
                         break;
                     case "reasoning":
                         var summary = string.Join("\n", (item!["summary"]?.AsArray() ?? []).Select(part => part?.ToString()));
@@ -756,9 +1072,6 @@ public sealed partial class BrowserForm
                         yield return new JsonObject { ["kind"] = "note", ["text"] = "대화를 압축했습니다." };
                         break;
                 }
-                break;
-            case "thread/compacted":
-                yield return new JsonObject { ["kind"] = "done" };
                 break;
             case "account/rateLimits/updated":
                 var limits = p["rateLimits"];
